@@ -6,12 +6,21 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:up": "docker compose -f mongodb/docker-compose.yml up -d --wait",
+    "db:down": "docker compose -f mongodb/docker-compose.yml down",
+    "db:logs": "docker compose -f mongodb/docker-compose.yml logs -f mongodb",
+    "db:shell": "docker compose -f mongodb/docker-compose.yml exec mongodb sh -c 'mongosh -u \"$MONGO_APP_USERNAME\" -p \"$MONGO_APP_PASSWORD\" --authenticationDatabase \"$MONGO_APP_DB\" \"$MONGO_APP_DB\"'",
+    "db:indexes": "tsx scripts/db-indexes.ts",
+    "db:seed": "tsx scripts/db-seed.ts",
+    "db:backup": "bash mongodb/backup.sh"
   },
   "dependencies": {
+    "mongoose": "^9.11.4",
     "next": "16.3.5",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -21,6 +30,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }

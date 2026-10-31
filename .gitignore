@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# allow committing env templates (real .env files stay ignored)
+!.env.example
+
+# MongoDB backups made by mongodb/backup.sh
+/mongodb/backups/

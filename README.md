@@ -1,37 +1,51 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Digital Skills Wallet
 
-## Getting Started
+Agentic AI-enabled authentic assessments and a Digital Skills Wallet, built
+for Kanavoogle (IFQ711, Team 01C). Students demonstrate seven core skills
+through subject assessments. Results become skill coins in a wallet the
+student owns and can selectively share. Teachers manage assessments and see
+class and individual results.
 
-First, run the development server:
+Built with Next.js 16 (App Router) and a **self-hosted MongoDB** server (no
+hosted database service).
+
+## Getting started
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+
+# Database: a MongoDB server you run yourself (Docker)
+cp mongodb/.env.example mongodb/.env   # set the passwords
+cp .env.example .env.local             # same app password in MONGODB_URI
+npm run db:up                          # start MongoDB
+npm run db:seed                        # optional demo data (prints the demo logins)
+
+npm run dev                            # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Check the database connection at <http://localhost:3000/api/health/db>.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- Server setup (laptop, Linux server with Docker, or native install), backups and security: [`mongodb/README.md`](mongodb/README.md)
+- Collections, rules and how to query them from app code: [`lib/db/README.md`](lib/db/README.md)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Project structure
 
-## Learn More
+```
+app/                  Next.js routes (pages, layouts, route handlers)
+  api/health/db/      GET: database health check
+lib/db/               MongoDB connection, constants and Mongoose models
+lib/security/         Password hashing
+mongodb/              Self-hosted MongoDB server: Docker Compose, config, init and backup scripts
+scripts/              Database scripts (seed, indexes)
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Scripts
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-# assignment-2a
+| Command | Description |
+| --- | --- |
+| `npm run dev` / `build` / `start` | Next.js development server / production build / production server |
+| `npm run lint` | ESLint |
+| `npm run db:up` / `db:down` | Start / stop the MongoDB container |
+| `npm run db:seed` | Load demo data (`-- --reset` wipes the database first) |
+| `npm run db:indexes` | Sync MongoDB indexes (run on every production deploy) |
+| `npm run db:shell` / `db:logs` / `db:backup` | mongosh as the app user / server logs / backup |

@@ -1,0 +1,58 @@
+# Self-hosted MongoDB server for the Digital Skills Wallet.
+#
+# Runs the official MongoDB Community image on any machine with Docker:
+# a laptop, a university VM or a cloud VPS. It does not use a hosted
+# service like Atlas. See mongodb/README.md for setup steps.
+#
+#   cp mongodb/.env.example mongodb/.env   # then set real passwords
+#   npm run db:up                          # or: docker compose -f mongodb/docker-compose.yml up -d
+#
+# Compose reads variables from mongodb/.env because that is the folder this
+# file is in.
+
+name: dsw-mongodb
+
+services:
+  mongodb:
+    image: mongo:8.0
+    restart: unless-stopped
+    # The image's entrypoint adds --bind_ip_all and, because a root user is
+    # configured below, --auth. Clients must log in.
+    command:
+      - mongod
+      - --wiredTigerCacheSizeGB
+      - "${MONGO_CACHE_SIZE_GB:-1}"
+    environment:
+      # Root (admin) account. Use it only for maintenance, never in the app.
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:?Set MONGO_ROOT_USERNAME in mongodb/.env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Set MONGO_ROOT_PASSWORD in mongodb/.env}
+      MONGO_INITDB_DATABASE: ${MONGO_APP_DB:-digital_skills_wallet}
+      # Least-privilege account the Next.js app connects with. The script in
+      # ./init creates it the first time the data volume starts empty.
+      MONGO_APP_DB: ${MONGO_APP_DB:-digital_skills_wallet}
+      MONGO_APP_USERNAME: ${MONGO_APP_USERNAME:?Set MONGO_APP_USERNAME in mongodb/.env}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?Set MONGO_APP_PASSWORD in mongodb/.env}
+    ports:
+      # Bound to localhost by default, so only programs on this machine can
+      # connect. Set MONGO_BIND_IP to a private network address (and use a
+      # firewall) only if the app runs on a different server.
+      - "${MONGO_BIND_IP:-127.0.0.1}:${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongo-data:/data/db
+      - mongo-config:/data/configdb
+      - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "quit(db.adminCommand('ping').ok ? 0 : 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  mongo-data:
+  mongo-config:
