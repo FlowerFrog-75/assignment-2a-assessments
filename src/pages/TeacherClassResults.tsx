@@ -3,6 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import type { Page } from '../types';
 import DataSourceBadge from '../components/DataSourceBadge';
 import { selectStudent, useApiData } from '../lib/api';
+import { downloadCsv, PageStatus } from '../components/ui';
 
 interface Props { setPage: (p: Page) => void; }
 
@@ -40,6 +41,8 @@ const classProgress = [
 // from GET /api/classes/current/results in the same shape.
 const mockClass = {
   header: { className: 'Class 11B', subtitle: 'Grade 11 · Ms. Chen · Term 3, 2024' },
+  classes: [] as { id: string; name: string }[],
+  classId: '',
   completed: { done: 38, expected: 40 },
   students,
   skillAverages,
@@ -47,12 +50,23 @@ const mockClass = {
 };
 
 export default function TeacherClassResults({ setPage }: Props) {
-  const results = useApiData('/classes/current/results', mockClass);
-  const { header, completed, students, skillAverages, classProgress } = results.data;
-  const classAvg = students.length ? Math.round(students.reduce((a, s) => a + s.avg, 0) / students.length) : 0;
+  const [classId, setClassId] = useState(() => sessionStorage.getItem('dsw:class') ?? '');
+  const results = useApiData(`/classes/current/results${classId ? `?classId=${encodeURIComponent(classId)}` : ''}`, mockClass);
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'name' | 'avg' | 'assessments'>('avg');
   const [filterRange, setFilterRange] = useState('All');
+  if (!results.ready) return <PageStatus error={results.error} onRetry={results.reload} />;
+  const { header, completed, students, skillAverages, classProgress, classes } = results.data;
+  const classAvg = students.length ? Math.round(students.reduce((a, s) => a + s.avg, 0) / students.length) : 0;
+  const chooseClass = (id: string) => {
+    try { sessionStorage.setItem('dsw:class', id); } catch { /* ignore */ }
+    setClassId(id);
+  };
+  const exportCsv = () =>
+    downloadCsv(`${header.className.replace(/[^\w-]+/g, '_')}-results.csv`, [
+      ['Name', 'Wallet ID', 'Average %', 'Assessments', ...skillAverages.map((s) => s.skill)],
+      ...students.map((s) => [s.name, s.id, s.avg, s.assessments, ...Object.values(s.skills)]),
+    ]);
 
   const filtered = students
     .filter(s => {
@@ -89,7 +103,17 @@ export default function TeacherClassResults({ setPage }: Props) {
           <p className="text-sm text-gray-500 font-body mt-0.5">{header.className} · {header.subtitle} · {students.length} students</p>
         </div>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-sm font-medium font-body text-gray-600 hover:border-emerald-200 hover:text-emerald-700 transition-all">
+          {classes.length > 1 && (
+            <select
+              aria-label="Class"
+              value={results.data.classId}
+              onChange={(e) => chooseClass(e.target.value)}
+              className="px-3 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-sm font-body text-gray-700"
+            >
+              {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          )}
+          <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-sm font-medium font-body text-gray-600 hover:border-emerald-200 hover:text-emerald-700 transition-all">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
             Export CSV
           </button>

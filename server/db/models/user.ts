@@ -40,10 +40,18 @@ const userSchema = new Schema(
     // 2FA is required for teachers and admins. The login flow enforces that.
     twoFactor: {
       enabled: { type: Boolean, default: false },
-      // Encrypt the TOTP secret before storing it here.
+      // TOTP secret, encrypted with server/security/secrets.ts.
       secret: { type: String, select: false },
+      // Secret being set up, until the user confirms it with a code.
+      pendingSecret: { type: String, select: false },
+      // Last time step accepted, so the same code can't be used twice.
+      lastUsedStep: { type: Number, select: false },
       enrolledAt: { type: Date },
     },
+    /** Set for new accounts and admin password resets: must choose a new password at next sign-in. */
+    mustChangePassword: { type: Boolean, default: false },
+    failedLogins: { type: Number, default: 0 },
+    lockedUntil: { type: Date },
     publicKeys: { type: [publicKeySchema], default: [] },
     status: { type: String, enum: USER_STATUSES, default: "active" },
     lastLoginAt: { type: Date },
@@ -64,7 +72,11 @@ const userSchema = new Schema(
       transform(_doc, ret: Record<string, unknown>) {
         delete ret.passwordHash;
         const twoFactor = ret.twoFactor as Record<string, unknown> | undefined;
-        if (twoFactor) delete twoFactor.secret;
+        if (twoFactor) {
+          delete twoFactor.secret;
+          delete twoFactor.pendingSecret;
+          delete twoFactor.lastUsedStep;
+        }
         return ret;
       },
     },

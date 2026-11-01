@@ -7,7 +7,7 @@ interface Props { setPage: (p: Page) => void; }
 
 // Live view of the Hyperledger Fabric ledger: who runs it, a wallet read from
 // it, assessment evidence checked against MongoDB, and the chain of blocks.
-// Data: GET /api/demo/ledger?wallet=DSW-... (see server/api/ledger-demo.ts).
+// Data: GET /api/ledger/overview?wallet=DSW-... (see server/api/ledger.ts). Administrators only.
 
 interface LedgerEvent {
   eventId: string;
@@ -84,9 +84,9 @@ function Section({ n, title, children }: { n: number; title: string; children: R
   );
 }
 
-export default function LedgerDemo(_props: Props) {
+export default function LedgerOverview(_props: Props) {
   const [wallet, setWallet] = useState<string | null>(null);
-  const demo = useApiData<LedgerDemoData | null>(`/demo/ledger${wallet ? `?wallet=${encodeURIComponent(wallet)}` : ''}`, null);
+  const demo = useApiData<LedgerDemoData | null>(`/ledger/overview${wallet ? `?wallet=${encodeURIComponent(wallet)}` : ''}`, null);
   const data = demo.data;
   const ledger = data?.ledger;
 
@@ -133,11 +133,12 @@ export default function LedgerDemo(_props: Props) {
           </h2>
           <p className="text-sm text-gray-500 font-body mb-4">
             {demo.error?.message ?? 'This screen reads live from the Hyperledger Fabric network, so it needs the API server, MongoDB and the Fabric network running.'}
+            {data === null && !demo.error && ' (In the design preview there is no sample ledger: blockchain data is never made up.)'}
           </p>
           {!demo.error && (
             <pre className="text-left text-xs font-mono bg-[#1A1B2E] text-emerald-300 rounded-lg p-4 inline-block">
-{`pnpm db:up && pnpm db:seed --reset
-pnpm fabric:up && pnpm ledger:sync
+{`pnpm db:up
+pnpm fabric:up
 pnpm dev:full`}
             </pre>
           )}

@@ -1,9 +1,34 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Page } from '../types';
+import { apiSend, ApiRequestError, isPreviewMode, selectedAttempt, useApiData } from '../lib/api';
+import { PageStatus } from '../components/ui';
 
 interface Props { setPage: (p: Page) => void; }
 
-const questions = [
+interface Question {
+  number: number;
+  itemId: string;
+  skill: string;
+  type: 'multiple_choice' | 'short_response';
+  prompt: string;
+  options: { key: string; text: string }[];
+  points: number;
+  answer: string;
+  flagged: boolean;
+}
+
+interface Attempt {
+  attemptId: string;
+  title: string;
+  subject: string;
+  status: 'in_progress' | 'submitted' | 'marked' | 'released';
+  endsAt: string | null;
+  serverTime: string;
+  questions: Question[];
+}
+
+// Sample paper for the design preview only.
+const sampleQuestions = [
   {
     id: 1,
     question: 'A scientist observes that plants in a controlled environment grow taller when exposed to blue light compared to red light. Which of the following best describes an analytical approach to investigating this finding?',
@@ -71,38 +96,167 @@ const questions = [
   },
 ];
 
+const samplePaper: Attempt = {
+  attemptId: 'preview',
+  title: 'Critical Thinking in Data Interpretation',
+  subject: 'Science',
+  status: 'in_progress',
+  endsAt: new Date(Date.now() + 45 * 60_000).toISOString(),
+  serverTime: new Date().toISOString(),
+  questions: sampleQuestions.map((q, i) => ({
+    number: i + 1,
+    itemId: String(q.id),
+    skill: q.skill,
+    type: 'multiple_choice',
+    prompt: q.question,
+    options: q.options.map((text, j) => ({ key: String.fromCharCode(65 + j), text })),
+    points: 1,
+    answer: '',
+    flagged: false,
+  })),
+};
+
 export default function AssessmentInterface({ setPage }: Props) {
+  const attemptId = selectedAttempt();
+  const paper = useApiData<Attempt>(attemptId ? `/me/attempts/${attemptId}` : null, samplePaper);
+  const preview = isPreviewMode();
   const [current, setCurrent] = useState(0);
-  const [selected, setSelected] = useState<Record<number, number>>({});
-  const [timeLeft, setTimeLeft] = useState(45 * 60);
-  const [flagged, setFlagged] = useState<Set<number>>(new Set());
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [flagged, setFlagged] = useState<Set<string>>(new Set());
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved');
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const clockOffset = useRef(0);
+  const pending = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const submittedRef = useRef(false);
 
+  // Load saved answers and work out the time left from the server's clock.
   useEffect(() => {
-    if (submitted) return;
-    const t = setInterval(() => setTimeLeft((v) => Math.max(0, v - 1)), 1000);
+    if (!paper.ready) return;
+    const d = paper.data;
+    setAnswers(Object.fromEntries(d.questions.map((q) => [q.itemId, q.answer])));
+    setFlagged(new Set(d.questions.filter((q) => q.flagged).map((q) => q.itemId)));
+    clockOffset.current = new Date(d.serverTime).getTime() - Date.now();
+    if (d.status !== 'in_progress') setSubmitted(true);
+  }, [paper.ready, paper.data]);
+
+  const save = useCallback(
+    async (itemId: string, patch: { answer?: string; flagged?: boolean }) => {
+      if (preview || !attemptId) return;
+      setSaveState('saving');
+      try {
+        await apiSend('PUT', `/me/attempts/${attemptId}/responses`, { itemId, ...patch });
+        setSaveState('saved');
+      } catch (err) {
+        if (err instanceof ApiRequestError && err.code === 'attempt_closed') {
+          submittedRef.current = true;
+          setSubmitted(true);
+          return;
+        }
+        setSaveState('error');
+      }
+    },
+    [attemptId, preview],
+  );
+
+  const submit = useCallback(async () => {
+    if (submittedRef.current) return;
+    submittedRef.current = true;
+    setSubmitting(true);
+    setError(null);
+    // Flush answers still waiting to save.
+    for (const [itemId, timer] of Object.entries(pending.current)) {
+      clearTimeout(timer);
+      delete pending.current[itemId];
+    }
+    try {
+      if (!preview && attemptId) {
+        await Promise.all(Object.entries(answers).map(([itemId, answer]) => (answer ? save(itemId, { answer }) : null)));
+        await apiSend('POST', `/me/attempts/${attemptId}/submit`);
+      }
+      setSubmitted(true);
+    } catch (err) {
+      submittedRef.current = false;
+      setError(err instanceof ApiRequestError ? err.message : 'Could not submit. Check your connection and try again.');
+    } finally {
+      setSubmitting(false);
+      setConfirming(false);
+    }
+  }, [answers, attemptId, preview, save]);
+
+  // Countdown. When it reaches zero the answers are submitted.
+  useEffect(() => {
+    if (!paper.ready || submitted || !paper.data.endsAt) return;
+    const endsAt = new Date(paper.data.endsAt).getTime();
+    const tick = () => {
+      const left = Math.max(0, Math.round((endsAt - (Date.now() + clockOffset.current)) / 1000));
+      setTimeLeft(left);
+      if (left === 0) submit();
+    };
+    tick();
+    const t = setInterval(tick, 1000);
     return () => clearInterval(t);
-  }, [submitted]);
+  }, [paper.ready, paper.data, submitted, submit]);
 
-  const mins = Math.floor(timeLeft / 60);
-  const secs = timeLeft % 60;
-  const isLow = timeLeft < 300;
-  const progress = ((current + 1) / questions.length) * 100;
+  // Warn before closing the tab while answers are still saving.
+  useEffect(() => {
+    const warn = (e: BeforeUnloadEvent) => {
+      if (saveState === 'saving' || Object.keys(pending.current).length) e.preventDefault();
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [saveState]);
+
+  if (!attemptId && !preview) {
+    return <PageStatus error={{ status: 404, code: 'no_attempt', message: 'Choose an assessment to start from My Assessments.' }}><button onClick={() => setPage('student-assessments')} className="text-sm text-orange-600 font-semibold">Go to My Assessments →</button></PageStatus>;
+  }
+  if (!paper.ready) return <PageStatus error={paper.error} onRetry={paper.reload} />;
+
+  const questions = paper.data.questions;
   const q = questions[current];
-  const answered = Object.keys(selected).length;
+  const answered = questions.filter((x) => answers[x.itemId]?.trim()).length;
+  const left = timeLeft ?? 0;
+  const mins = Math.floor(left / 60);
+  const secs = left % 60;
+  const isLow = left < 300;
+  const progress = ((current + 1) / questions.length) * 100;
 
-  const handleSubmit = () => {
-    setSubmitted(true);
-    setTimeout(() => setPage('results-interface'), 1500);
+  const choose = (value: string, debounce = false) => {
+    setAnswers((prev) => ({ ...prev, [q.itemId]: value }));
+    const itemId = q.itemId;
+    clearTimeout(pending.current[itemId]);
+    if (debounce) {
+      setSaveState('saving');
+      pending.current[itemId] = setTimeout(() => {
+        delete pending.current[itemId];
+        save(itemId, { answer: value });
+      }, 800);
+    } else save(itemId, { answer: value });
+  };
+
+  const toggleFlag = () => {
+    const next = new Set(flagged);
+    if (next.has(q.itemId)) next.delete(q.itemId);
+    else next.add(q.itemId);
+    setFlagged(next);
+    save(q.itemId, { flagged: next.has(q.itemId) });
   };
 
   if (submitted) {
     return (
-      <div className="min-h-screen bg-[#F8F9FC] flex items-center justify-center">
-        <div className="text-center">
+      <div className="min-h-screen bg-[#F8F9FC] flex items-center justify-center p-6">
+        <div className="text-center max-w-md">
           <div className="text-5xl mb-4">✅</div>
-          <h2 className="font-display font-700 text-2xl text-gray-900 mb-2">Assessment Submitted!</h2>
-          <p className="text-gray-500 font-body">Calculating your results…</p>
+          <h2 className="font-display font-700 text-2xl text-gray-900 mb-2">Assessment submitted</h2>
+          <p className="text-gray-500 font-body mb-6">
+            Your answers are saved. Your teacher will check them and release your results. You&apos;ll earn skill coins for your wallet when they do.
+          </p>
+          <button onClick={() => setPage('student-assessments')} className="px-5 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold font-body">
+            Back to my assessments
+          </button>
         </div>
       </div>
     );
@@ -117,8 +271,11 @@ export default function AssessmentInterface({ setPage }: Props) {
           <span className="text-xs font-mono font-600 text-purple-600 uppercase tracking-widest">Live Assessment</span>
         </div>
         <div className="font-body font-600 text-gray-700 text-sm flex-1 truncate">
-          Critical Thinking in Data Interpretation
+          {paper.data.title}
         </div>
+        <span className={`text-xs font-body ${saveState === 'error' ? 'text-red-600' : 'text-gray-400'}`}>
+          {preview ? 'Preview' : saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Not saved: check your connection' : 'All answers saved'}
+        </span>
 
         {/* Progress */}
         <div className="flex items-center gap-3">
@@ -154,13 +311,13 @@ export default function AssessmentInterface({ setPage }: Props) {
                 className={`w-8 h-8 rounded-lg text-xs font-display font-600 transition-all relative ${
                   i === current
                     ? 'bg-purple-600 text-white'
-                    : selected[i] !== undefined
+                    : answers[questions[i].itemId]?.trim()
                     ? 'bg-purple-100 text-purple-700'
                     : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                 }`}
               >
                 {i + 1}
-                {flagged.has(i) && (
+                {flagged.has(questions[i].itemId) && (
                   <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-yellow-400 rounded-full"></span>
                 )}
               </button>
@@ -201,48 +358,62 @@ export default function AssessmentInterface({ setPage }: Props) {
                 <span className="text-sm text-gray-400 font-body">of {questions.length} questions</span>
               </div>
               <button
-                onClick={() => setFlagged(prev => {
-                  const next = new Set(prev);
-                  next.has(current) ? next.delete(current) : next.add(current);
-                  return next;
-                })}
+                onClick={toggleFlag}
                 className={`flex items-center gap-1.5 text-xs font-body px-3 py-1.5 rounded-lg border transition-all ${
-                  flagged.has(current) ? 'bg-yellow-50 border-yellow-300 text-yellow-700' : 'bg-white border-[#E8EAF0] text-gray-500 hover:border-yellow-300'
+                  flagged.has(q.itemId) ? 'bg-yellow-50 border-yellow-300 text-yellow-700' : 'bg-white border-[#E8EAF0] text-gray-500 hover:border-yellow-300'
                 }`}
               >
-                🚩 {flagged.has(current) ? 'Flagged' : 'Flag for review'}
+                🚩 {flagged.has(q.itemId) ? 'Flagged' : 'Flag for review'}
               </button>
             </div>
 
             {/* Question card */}
             <div className="bg-white rounded-2xl border border-[#E8EAF0] shadow-sm p-7 mb-6">
               <div className="text-xs font-mono text-purple-500 mb-3 uppercase tracking-widest">{q.skill}</div>
-              <p className="font-body text-gray-800 text-base leading-relaxed">{q.question}</p>
+              <p className="font-body text-gray-800 text-base leading-relaxed whitespace-pre-wrap">{q.prompt}</p>
+              <div className="text-xs text-gray-400 font-body mt-3">{q.points} mark{q.points === 1 ? '' : 's'}</div>
             </div>
 
-            {/* Options */}
-            <div className="flex flex-col gap-3 mb-8">
-              {q.options.map((opt, i) => (
-                <button
-                  key={i}
-                  onClick={() => setSelected(prev => ({ ...prev, [current]: i }))}
-                  className={`flex items-start gap-4 p-4 rounded-xl border text-left transition-all ${
-                    selected[current] === i
-                      ? 'bg-purple-50 border-purple-400 shadow-sm'
-                      : 'bg-white border-[#E8EAF0] hover:border-purple-200 hover:bg-purple-50/30'
-                  }`}
-                >
-                  <div className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-display font-700 mt-0.5 ${
-                    selected[current] === i ? 'border-purple-500 bg-purple-500 text-white' : 'border-gray-300 text-gray-400'
-                  }`}>
-                    {String.fromCharCode(65 + i)}
-                  </div>
-                  <span className={`font-body text-sm leading-relaxed ${selected[current] === i ? 'text-purple-900 font-medium' : 'text-gray-700'}`}>
-                    {opt}
-                  </span>
-                </button>
-              ))}
-            </div>
+            {/* Answer */}
+            {q.type === 'multiple_choice' ? (
+              <div className="flex flex-col gap-3 mb-8" role="radiogroup">
+                {q.options.map((opt) => {
+                  const chosen = answers[q.itemId] === opt.key;
+                  return (
+                    <button
+                      key={opt.key}
+                      role="radio"
+                      aria-checked={chosen}
+                      onClick={() => choose(opt.key)}
+                      className={`flex items-start gap-4 p-4 rounded-xl border text-left transition-all ${
+                        chosen ? 'bg-purple-50 border-purple-400 shadow-sm' : 'bg-white border-[#E8EAF0] hover:border-purple-200 hover:bg-purple-50/30'
+                      }`}
+                    >
+                      <div className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-display font-700 mt-0.5 ${
+                        chosen ? 'border-purple-500 bg-purple-500 text-white' : 'border-gray-300 text-gray-400'
+                      }`}>
+                        {opt.key}
+                      </div>
+                      <span className={`font-body text-sm leading-relaxed ${chosen ? 'text-purple-900 font-medium' : 'text-gray-700'}`}>{opt.text}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="mb-8">
+                <textarea
+                  value={answers[q.itemId] ?? ''}
+                  onChange={(e) => choose(e.target.value, true)}
+                  rows={8}
+                  maxLength={10000}
+                  aria-label="Your answer"
+                  placeholder="Write your answer here…"
+                  className="w-full p-4 rounded-xl border border-[#E8EAF0] bg-white text-sm font-body text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400"
+                />
+              </div>
+            )}
+
+            {error && <div className="mb-4 px-4 py-3 rounded-xl bg-red-50 border border-red-100 text-sm text-red-700 font-body">{error}</div>}
 
             {/* Navigation */}
             <div className="flex items-center justify-between">
@@ -266,7 +437,7 @@ export default function AssessmentInterface({ setPage }: Props) {
                   </button>
                 ) : (
                   <button
-                    onClick={handleSubmit}
+                    onClick={() => setConfirming(true)}
                     className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold font-body transition-all shadow-sm shadow-emerald-200"
                   >
                     ✅ Submit Assessment
@@ -277,6 +448,21 @@ export default function AssessmentInterface({ setPage }: Props) {
           </div>
         </div>
       </div>
+      {confirming && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div role="dialog" aria-modal="true" className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <h2 className="font-display font-bold text-lg text-gray-900 mb-2">Submit your assessment?</h2>
+            <p className="text-sm text-gray-600 font-body mb-2">You&apos;ve answered {answered} of {questions.length} questions{flagged.size ? `, and flagged ${flagged.size} to review` : ''}.</p>
+            <p className="text-sm text-gray-600 font-body mb-5">You can&apos;t change your answers after submitting.</p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setConfirming(false)} className="px-4 py-2 rounded-xl border border-[#E8EAF0] text-sm font-semibold font-body text-gray-700 hover:bg-gray-50">Keep working</button>
+              <button onClick={submit} disabled={submitting} className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold font-body disabled:opacity-60">
+                {submitting ? 'Submitting…' : 'Submit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,18 +1,56 @@
-import { useState } from 'react';
-import type { Page } from '../types';
+import { useState, type FormEvent } from 'react';
+import type { Page, UserRole } from '../types';
+import { apiSend, ApiRequestError } from '../lib/api';
+import { useAuth } from '../lib/auth';
 
 interface LoginPageProps {
   setPage: (page: Page) => void;
 }
 
+const inputClass =
+  'w-full px-4 py-2.5 rounded-xl border border-[#E8EAF0] text-sm font-body text-gray-800 placeholder-gray-300 focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-50 transition-all bg-gray-50 focus:bg-white';
+
 export default function LoginPage({ setPage }: LoginPageProps) {
-  const [role, setRole] = useState<'student' | 'teacher'>('student');
+  const { state, refresh, enterPreview } = useAuth();
+  const [step, setStep] = useState<'password' | 'code'>('password');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
+  const offline = state.status === 'signed-out' && state.offline;
 
-  const handleLogin = () => {
-    if (role === 'student') setPage('student-dashboard');
-    else setPage('teacher-class');
+  const submitPassword = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await apiSend<{ twoFactorRequired: boolean }>('POST', '/auth/login', { email, password });
+      setPassword('');
+      if (result.twoFactorRequired) setStep('code');
+      else await refresh();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Sign-in failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitCode = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await apiSend('POST', '/auth/2fa/verify', { code: code.replace(/\s/g, '') });
+      await refresh();
+    } catch (err) {
+      setCode('');
+      if (err instanceof ApiRequestError && err.code === 'no_pending_login') setStep('password');
+      setError(err instanceof ApiRequestError ? err.message : 'Verification failed');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -59,7 +97,7 @@ export default function LoginPage({ setPage }: LoginPageProps) {
           </div>
 
           <p className="text-white/20 text-xs font-body">
-            © 2024 Digital Skills Wallet · Version 2.4.1
+            © {new Date().getFullYear()} Digital Skills Wallet
           </p>
         </div>
       </div>
@@ -68,99 +106,89 @@ export default function LoginPage({ setPage }: LoginPageProps) {
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
           <div className="bg-white rounded-2xl shadow-sm border border-[#E8EAF0] p-8">
-            <div className="mb-8">
-              <h1 className="font-display font-700 text-2xl text-gray-900 mb-1">Welcome back</h1>
-              <p className="text-sm text-gray-500 font-body">Sign in to your Digital Skills Wallet</p>
-            </div>
-
-            {/* Role toggle */}
-            <div className="flex rounded-xl bg-gray-50 border border-[#E8EAF0] p-1 mb-6">
-              <button
-                onClick={() => setRole('student')}
-                className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${
-                  role === 'student' ? 'bg-white shadow-sm text-orange-600 border border-orange-100' : 'text-gray-500 hover:text-gray-700'
-                } font-body`}
-              >
-                🎓 Student
-              </button>
-              <button
-                onClick={() => setRole('teacher')}
-                className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${
-                  role === 'teacher' ? 'bg-white shadow-sm text-emerald-600 border border-emerald-100' : 'text-gray-500 hover:text-gray-700'
-                } font-body`}
-              >
-                👩‍🏫 Teacher
-              </button>
-            </div>
-
-            {/* Form */}
-            <div className="flex flex-col gap-4 mb-6">
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5 font-body uppercase tracking-wider">
-                  Email Address
-                </label>
+            {step === 'password' ? (
+              <form onSubmit={submitPassword}>
+                <div className="mb-8">
+                  <h1 className="font-display font-700 text-2xl text-gray-900 mb-1">Welcome back</h1>
+                  <p className="text-sm text-gray-500 font-body">Sign in to your Digital Skills Wallet</p>
+                </div>
+                <div className="flex flex-col gap-4 mb-6">
+                  <div>
+                    <label htmlFor="email" className="block text-xs font-semibold text-gray-600 mb-1.5 font-body uppercase tracking-wider">Email address</label>
+                    <input id="email" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@school.edu.au" className={inputClass} />
+                  </div>
+                  <div>
+                    <label htmlFor="password" className="block text-xs font-semibold text-gray-600 mb-1.5 font-body uppercase tracking-wider">Password</label>
+                    <input id="password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className={inputClass} />
+                  </div>
+                  <div className="flex justify-end">
+                    <button type="button" onClick={() => setShowHelp((v) => !v)} className="text-sm text-purple-600 hover:text-purple-700 font-medium font-body">Forgot password?</button>
+                  </div>
+                  {showHelp && (
+                    <p className="text-sm text-gray-500 font-body bg-gray-50 border border-[#E8EAF0] rounded-xl px-4 py-3">
+                      Ask your school&apos;s Digital Skills Wallet administrator to reset it. They&apos;ll give you a temporary password, and you&apos;ll choose a new one when you sign in.
+                    </p>
+                  )}
+                </div>
+                {error && <p role="alert" className="text-sm text-red-600 font-body mb-4">{error}</p>}
+                <button type="submit" disabled={busy} className="w-full py-3 rounded-xl font-semibold text-sm font-body text-white transition-all active:scale-95 bg-purple-600 hover:bg-purple-700 shadow-sm shadow-purple-200 disabled:opacity-60">
+                  {busy ? 'Signing in…' : 'Sign in'}
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={submitCode}>
+                <div className="mb-8">
+                  <h1 className="font-display font-700 text-2xl text-gray-900 mb-1">Two-factor authentication</h1>
+                  <p className="text-sm text-gray-500 font-body">Enter the 6-digit code from your authenticator app.</p>
+                </div>
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder={role === 'student' ? 'jordan.smith@school.edu' : 'ms.chen@school.edu'}
-                  className="w-full px-4 py-2.5 rounded-xl border border-[#E8EAF0] text-sm font-body text-gray-800 placeholder-gray-300 focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-50 transition-all bg-gray-50 focus:bg-white"
+                  autoFocus
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="[0-9 ]{6,7}"
+                  maxLength={7}
+                  required
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  placeholder="123 456"
+                  aria-label="6-digit code"
+                  className={`${inputClass} text-center text-2xl tracking-[0.4em] font-mono mb-6`}
                 />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5 font-body uppercase tracking-wider">
-                  Password
-                </label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full px-4 py-2.5 rounded-xl border border-[#E8EAF0] text-sm font-body text-gray-800 placeholder-gray-300 focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-50 transition-all bg-gray-50 focus:bg-white"
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2 text-sm text-gray-500 font-body cursor-pointer">
-                  <input type="checkbox" className="rounded border-gray-300 text-purple-600" />
-                  Remember me
-                </label>
-                <button className="text-sm text-purple-600 hover:text-purple-700 font-medium font-body">Forgot password?</button>
-              </div>
-            </div>
-
-            <button
-              onClick={handleLogin}
-              className={`w-full py-3 rounded-xl font-semibold text-sm font-body text-white transition-all active:scale-95 ${
-                role === 'student'
-                  ? 'bg-orange-500 hover:bg-orange-600 shadow-sm shadow-orange-200'
-                  : 'bg-emerald-500 hover:bg-emerald-600 shadow-sm shadow-emerald-200'
-              }`}
-            >
-              Sign In as {role === 'student' ? 'Student' : 'Teacher'}
-            </button>
-
-            <div className="mt-4 text-center">
-              <span className="text-sm text-gray-400 font-body">
-                Demo credentials: any email + password
-              </span>
-            </div>
+                {error && <p role="alert" className="text-sm text-red-600 font-body mb-4">{error}</p>}
+                <button type="submit" disabled={busy} className="w-full py-3 rounded-xl font-semibold text-sm font-body text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-60">
+                  {busy ? 'Checking…' : 'Verify'}
+                </button>
+                <button type="button" onClick={() => { setStep('password'); setError(null); }} className="w-full mt-3 text-sm text-gray-500 hover:text-gray-700 font-body">
+                  Use a different account
+                </button>
+                <p className="text-xs text-gray-400 font-body mt-4 text-center">Lost your phone? Ask your administrator to reset your 2FA.</p>
+              </form>
+            )}
           </div>
 
-          {/* Quick access */}
-          <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="mt-4">
             <button
               onClick={() => setPage('public-verification')}
-              className="bg-white border border-[#E8EAF0] rounded-xl px-4 py-3 text-sm text-gray-600 hover:border-purple-200 hover:text-purple-700 transition-all font-body"
+              className="w-full bg-white border border-[#E8EAF0] rounded-xl px-4 py-3 text-sm text-gray-600 hover:border-purple-200 hover:text-purple-700 transition-all font-body"
             >
-              🔗 Verify a Credential
-            </button>
-            <button
-              onClick={() => setPage('assessment-template')}
-              className="bg-white border border-[#E8EAF0] rounded-xl px-4 py-3 text-sm text-gray-600 hover:border-purple-200 hover:text-purple-700 transition-all font-body"
-            >
-              📋 Browse Assessments
+              🔗 Verify a student&apos;s credential
             </button>
           </div>
+
+          {import.meta.env.DEV && offline && (
+            <div className="mt-4 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
+              <p className="text-xs text-amber-800 font-body mb-2">
+                <strong>Development:</strong> the API server isn&apos;t running, so you can&apos;t sign in. Start it with <code>pnpm dev:full</code>, or browse the screens with sample data:
+              </p>
+              <div className="flex gap-2">
+                {(['student', 'teacher', 'admin'] as UserRole[]).map((role) => (
+                  <button key={role} onClick={() => enterPreview(role)} className="flex-1 text-xs font-semibold px-2 py-1.5 rounded-lg bg-white border border-amber-200 text-amber-800 hover:bg-amber-100 capitalize">
+                    {role} preview
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,7 +1,9 @@
 import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import type { Page } from '../types';
 import DataSourceBadge from '../components/DataSourceBadge';
-import { selectedStudent, useApiData } from '../lib/api';
+import { useState } from 'react';
+import { apiSend, ApiRequestError, isPreviewMode, selectedStudent, useApiData } from '../lib/api';
+import { PageStatus } from '../components/ui';
 
 interface Props { setPage: (p: Page) => void; }
 
@@ -41,8 +43,35 @@ const mockStudent = {
 const mockProfile = { student: mockStudent };
 
 export default function TeacherIndividualResults({ setPage }: Props) {
-  const profile = useApiData(`/students/${selectedStudent()}/profile`, mockProfile);
+  const walletId = selectedStudent();
+  const profile = useApiData(walletId ? `/students/${encodeURIComponent(walletId)}/profile` : null, mockProfile);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [note, setNote] = useState('');
+  const [noteError, setNoteError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  if (!walletId && !isPreviewMode()) {
+    return (
+      <PageStatus error={{ status: 404, code: 'no_student', message: 'Choose a student from Class Results to see their individual results.' }}>
+        <button onClick={() => setPage('teacher-class')} className="text-sm text-emerald-600 font-semibold">Go to Class Results →</button>
+      </PageStatus>
+    );
+  }
+  if (!profile.ready && !(profile.error && profile.error.status === 403)) return <PageStatus error={profile.error} onRetry={profile.reload} />;
   const { student } = profile.data;
+  const addNote = async () => {
+    setSaving(true);
+    setNoteError(null);
+    try {
+      await apiSend('POST', `/students/${encodeURIComponent(walletId ?? '')}/notes`, { body: note });
+      setNote('');
+      setNoteOpen(false);
+      profile.reload();
+    } catch (err) {
+      setNoteError(err instanceof ApiRequestError ? err.message : 'Could not save the note');
+    } finally {
+      setSaving(false);
+    }
+  };
   const firstName = student.name.split(' ')[0];
   const radarData = student.skills.map(s => ({ skill: s.short, student: s.score, classAvg: s.classAvg }));
   const compareData = student.skills.map(s => ({ skill: s.short, student: s.score, class: s.classAvg }));
@@ -98,14 +127,11 @@ export default function TeacherIndividualResults({ setPage }: Props) {
           </div>
         </div>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-sm font-medium font-body text-gray-600 hover:border-emerald-200 transition-all">
-            Message Student
-          </button>
           <button
-            onClick={() => setPage('digital-wallet')}
+            onClick={() => setNoteOpen(true)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold font-body transition-all shadow-sm shadow-emerald-200"
           >
-            💎 View Wallet
+            📝 Add note
           </button>
         </div>
       </div>
@@ -165,9 +191,20 @@ export default function TeacherIndividualResults({ setPage }: Props) {
           <div className="bg-white rounded-xl border border-[#E8EAF0] shadow-sm">
             <div className="px-5 py-4 border-b border-[#F0F2F7] flex items-center justify-between">
               <h2 className="font-display font-600 text-gray-900">Teacher Notes</h2>
-              <button className="text-xs text-emerald-600 font-semibold font-body hover:text-emerald-700">+ Add Note</button>
+              <button onClick={() => setNoteOpen(true)} className="text-xs text-emerald-600 font-semibold font-body hover:text-emerald-700">+ Add Note</button>
             </div>
             <div className="divide-y divide-[#F0F2F7]">
+              {noteOpen && (
+                <div className="px-5 py-4">
+                  <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} maxLength={2000} aria-label="Note" placeholder="Visible to staff who can see this student's results" className="w-full p-3 rounded-xl border border-[#E8EAF0] text-sm font-body focus:outline-none focus:ring-2 focus:ring-emerald-500/30" />
+                  {noteError && <p className="text-xs text-red-600 font-body mt-1">{noteError}</p>}
+                  <div className="flex gap-2 mt-2">
+                    <button onClick={addNote} disabled={saving || !note.trim()} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold disabled:opacity-50">{saving ? 'Saving…' : 'Save note'}</button>
+                    <button onClick={() => setNoteOpen(false)} className="px-3 py-1.5 rounded-lg text-xs text-gray-500">Cancel</button>
+                  </div>
+                </div>
+              )}
+              {student.notes.length === 0 && !noteOpen && <div className="px-5 py-4 text-xs text-gray-400 font-body">No notes yet.</div>}
               {student.notes.map((n, i) => (
                 <div key={i} className="px-5 py-4">
                   <div className="flex items-center gap-2 mb-2">

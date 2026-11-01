@@ -5,6 +5,8 @@ import { AssessmentTemplateModel } from "./assessment-template";
 import { AuditLogModel } from "./audit-log";
 import { ClassGroupModel } from "./class-group";
 import { ConsentModel } from "./consent";
+import { SchoolModel } from "./school";
+import { SessionModel } from "./session";
 import { TeacherNoteModel } from "./teacher-note";
 import { UserModel } from "./user";
 import { VerificationLinkModel } from "./verification-link";
@@ -17,6 +19,8 @@ export * from "./assessment-template";
 export * from "./audit-log";
 export * from "./class-group";
 export * from "./consent";
+export * from "./school";
+export * from "./session";
 export * from "./teacher-note";
 export * from "./user";
 export * from "./verification-link";
@@ -35,4 +39,6 @@ export const allModels = [
   ConsentModel,
   TeacherNoteModel,
   AuditLogModel,
+  SchoolModel,
+  SessionModel,
 ] as const;

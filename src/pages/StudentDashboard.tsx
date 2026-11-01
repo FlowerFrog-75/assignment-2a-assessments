@@ -1,7 +1,8 @@
 import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer, Tooltip } from 'recharts';
 import type { Page } from '../types';
 import DataSourceBadge from '../components/DataSourceBadge';
-import { DEMO_STUDENT_WALLET, useApiData } from '../lib/api';
+import { selectResult, useApiData } from '../lib/api';
+import { PageStatus } from '../components/ui';
 
 interface Props { setPage: (p: Page) => void; }
 
@@ -28,7 +29,7 @@ const completedAssessments = [
 ];
 
 // Demo data, shown when the API server isn't running. The live version comes
-// from GET /api/students/:walletId/dashboard in the same shape.
+// from GET /api/me/dashboard in the same shape.
 const mockDashboard = {
   student: { firstName: 'Jordan', subtitle: 'Wednesday, October 16 · Grade 11 · Room 204' },
   stats: { active: 3, completed: 12, averageScore: 76, badges: 7 },
@@ -44,7 +45,8 @@ const gradeColor = (g: string) => {
 };
 
 export default function StudentDashboard({ setPage }: Props) {
-  const dashboard = useApiData(`/students/${DEMO_STUDENT_WALLET}/dashboard`, mockDashboard);
+  const dashboard = useApiData('/me/dashboard', mockDashboard);
+  if (!dashboard.ready) return <PageStatus error={dashboard.error} onRetry={dashboard.reload} />;
   const { student, stats, skills, activeAssessments, completedAssessments } = dashboard.data;
   const radarData = skills.map(s => ({ skill: s.short, score: s.score, fullMark: 100 }));
   const totalCoins = skills.reduce((a, b) => a + b.coins, 0);
@@ -103,13 +105,14 @@ export default function StudentDashboard({ setPage }: Props) {
                 <p className="text-xs text-gray-400 font-body mt-0.5">{activeAssessments.length} in progress</p>
               </div>
               <button
-                onClick={() => setPage('assessment-interface')}
+                onClick={() => setPage('student-assessments')}
                 className="text-xs text-orange-600 hover:text-orange-700 font-semibold font-body"
               >
                 View All →
               </button>
             </div>
             <div className="divide-y divide-[#F0F2F7]">
+              {activeAssessments.length === 0 && <div className="px-5 py-8 text-center text-sm text-gray-400 font-body">Nothing to do right now. New assessments from your teachers appear here.</div>}
               {activeAssessments.map((a) => (
                 <div key={a.id} className="px-5 py-4">
                   <div className="flex items-start justify-between mb-2">
@@ -124,7 +127,7 @@ export default function StudentDashboard({ setPage }: Props) {
                         {a.due}
                       </span>
                       <button
-                        onClick={() => setPage('assessment-interface')}
+                        onClick={() => setPage('student-assessments')}
                         className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold font-body transition-all"
                       >
                         {a.progress > 0 ? 'Continue' : 'Start'}
@@ -160,10 +163,11 @@ export default function StudentDashboard({ setPage }: Props) {
               </button>
             </div>
             <div className="divide-y divide-[#F0F2F7]">
+              {completedAssessments.length === 0 && <div className="px-5 py-8 text-center text-sm text-gray-400 font-body">No results yet. They appear once your teacher releases them.</div>}
               {completedAssessments.map((a) => (
                 <button
                   key={a.id}
-                  onClick={() => setPage('results-interface')}
+                  onClick={() => { selectResult(a.id); setPage('results-interface'); }}
                   className="w-full px-5 py-4 flex items-center gap-4 hover:bg-gray-50 transition-colors text-left"
                 >
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-display font-700 text-sm ${gradeColor(a.grade)}`}>

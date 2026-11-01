@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar } from 'recharts';
 import type { Page } from '../types';
 import DataSourceBadge from '../components/DataSourceBadge';
-import { DEMO_STUDENT_WALLET, useApiData } from '../lib/api';
+import { selectResult, selectedResult, useApiData } from '../lib/api';
+import { PageStatus } from '../components/ui';
 
 interface Props { setPage: (p: Page) => void; }
 
@@ -39,6 +41,9 @@ const mockResult = {
   coinsEarned: 128,
   skillResults,
   questionBreakdown,
+  attempts: [] as { id: string; title: string; date: string }[],
+  attemptId: '',
+  feedback: 'Strong analysis of the data. Next time, explain why the sample size matters.',
 };
 
 const levelColor: Record<string, string> = {
@@ -49,8 +54,18 @@ const levelColor: Record<string, string> = {
 };
 
 export default function ResultsInterface({ setPage }: Props) {
-  const result = useApiData(`/students/${DEMO_STUDENT_WALLET}/results/latest`, mockResult);
-  const { title, subtitle, totalScore, classAvg, grade, timeTaken, timeRemaining, coinsEarned, skillResults, questionBreakdown } = result.data;
+  const [chosen, setChosen] = useState(selectedResult());
+  const result = useApiData(`/me/results/latest${chosen ? `?attempt=${encodeURIComponent(chosen)}` : ''}`, mockResult);
+  if (!result.ready) {
+    return (
+      <PageStatus error={result.error} onRetry={result.reload}>
+        {result.error?.code === 'no_results' && (
+          <button onClick={() => setPage('student-assessments')} className="text-sm text-orange-600 font-semibold mb-2">Go to my assessments →</button>
+        )}
+      </PageStatus>
+    );
+  }
+  const { attempts, attemptId, feedback, title, subtitle, totalScore, classAvg, grade, timeTaken, timeRemaining, coinsEarned, skillResults, questionBreakdown } = result.data;
   const vsClass = totalScore - classAvg;
   const strengths = skillResults.filter(s => s.score >= 80);
   const gaps = skillResults.filter(s => s.score < 75);
@@ -69,18 +84,35 @@ export default function ResultsInterface({ setPage }: Props) {
           <p className="text-sm text-gray-500 font-body mt-0.5">{subtitle}</p>
         </div>
         <div className="flex gap-3">
-          <button className="px-4 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-sm font-medium font-body text-gray-600 hover:border-gray-300 transition-all flex items-center gap-2">
+          {attempts.length > 1 && (
+            <select
+              aria-label="Choose a result"
+              value={attemptId}
+              onChange={(e) => { selectResult(e.target.value); setChosen(e.target.value); }}
+              className="px-3 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-sm font-body text-gray-700 max-w-[260px]"
+            >
+              {attempts.map((a) => <option key={a.id} value={a.id}>{a.title} · {a.date}</option>)}
+            </select>
+          )}
+          <button onClick={() => window.print()} className="px-4 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-sm font-medium font-body text-gray-600 hover:border-gray-300 transition-all flex items-center gap-2">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-            Download PDF
+            Print / save PDF
           </button>
           <button
             onClick={() => setPage('digital-wallet')}
             className="px-4 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold font-body transition-all flex items-center gap-2"
           >
-            💎 Save to Wallet
+            💎 View wallet
           </button>
         </div>
       </div>
+
+      {feedback && (
+        <div className="bg-orange-50 border border-orange-100 rounded-2xl px-6 py-4 mb-6">
+          <div className="text-xs font-mono font-600 text-orange-600 uppercase tracking-widest mb-1">Teacher feedback</div>
+          <p className="text-sm text-orange-900 font-body whitespace-pre-wrap">{feedback}</p>
+        </div>
+      )}
 
       {/* Score hero */}
       <div className="bg-white rounded-2xl border border-[#E8EAF0] shadow-sm p-6 mb-6">

@@ -1,7 +1,8 @@
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import type { Page } from '../types';
 import DataSourceBadge from '../components/DataSourceBadge';
-import { DEMO_STUDENT_WALLET, useApiData } from '../lib/api';
+import { useApiData } from '../lib/api';
+import { PageStatus } from '../components/ui';
 
 interface Props { setPage: (p: Page) => void; }
 
@@ -47,7 +48,8 @@ const mockWallet = {
 };
 
 export default function DigitalWallet({ setPage }: Props) {
-  const wallet = useApiData(`/students/${DEMO_STUDENT_WALLET}/wallet`, mockWallet);
+  const wallet = useApiData('/me/wallet', mockWallet);
+  if (!wallet.ready) return <PageStatus error={wallet.error} onRetry={wallet.reload} />;
   const { student, stats, coinHistory, ledger } = wallet.data;
   const skills = wallet.data.skills.map((s) => ({ ...s, ...(SKILL_STYLE[s.name] ?? { badge: '⭐', color: '#7C3AED' }) }));
   const achievements = wallet.data.achievements.map((a) => ({ ...a, badge: BADGE_ICON[a.code] ?? '🏅' }));
@@ -67,15 +69,15 @@ export default function DigitalWallet({ setPage }: Props) {
           <p className="text-sm text-gray-500 font-body mt-0.5">{student.name} · {student.grade} · ID: {student.walletId}</p>
         </div>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-sm font-medium font-body text-gray-600 hover:border-orange-200 hover:text-orange-700 transition-all">
+          <button onClick={() => setPage('privacy')} className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-sm font-medium font-body text-gray-600 hover:border-orange-200 hover:text-orange-700 transition-all">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
             Share Wallet
           </button>
           <button
-            onClick={() => setPage('public-verification')}
+            onClick={() => setPage('privacy')}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold font-body transition-all shadow-sm shadow-orange-200"
           >
-            🔗 Public Verification
+            🔗 Create verification link
           </button>
         </div>
       </div>
@@ -192,7 +194,7 @@ export default function DigitalWallet({ setPage }: Props) {
               Share a verified public link to your skills wallet with employers, universities, and collaborators.
             </p>
             <button
-              onClick={() => setPage('public-verification')}
+              onClick={() => setPage('privacy')}
               className="w-full bg-orange-500 hover:bg-orange-600 text-white rounded-lg py-2.5 text-sm font-semibold font-body transition-all"
             >
               Generate Verification Link

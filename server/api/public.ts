@@ -11,17 +11,20 @@ import {
   UserModel,
   WalletEventModel,
   appendAuditLog,
+  currentSchool,
   resolveVerificationToken,
   walletBalances,
 } from "../db/models";
 import { computeEvidenceHash, describeLedgerError, getChainInfo, getLedgerWallet } from "../ledger";
+import { rateLimit } from "../auth/rate-limit";
 import { ApiError, releasedAttempts, skillTotals } from "./data";
 import { formatDate, skillLevel } from "./format";
 
+export const healthRoutes = Router();
 export const publicRoutes = Router();
 
 /** GET /api/health: is MongoDB reachable, and is the Fabric network? */
-publicRoutes.get("/health", async (_req, res) => {
+healthRoutes.get("/health", async (_req, res) => {
   const started = performance.now();
   const mongo = await connectToDatabase()
     .then(async () => {
@@ -41,8 +44,8 @@ publicRoutes.get("/health", async (_req, res) => {
  * against the blockchain: balances must match the ledger, every coin must be
  * on it, and each assessment result must still match its fingerprint there.
  */
-publicRoutes.get("/verify/:code", async (req, res) => {
-  const link = await resolveVerificationToken(req.params.code);
+publicRoutes.get("/verify/:code", rateLimit("verify", 60, 10 * 60_000), async (req, res) => {
+  const link = await resolveVerificationToken(String(req.params.code));
   if (!link) {
     await appendAuditLog({
       actorRole: "anonymous", action: "verification.view", ip: req.ip, status: "failure",
@@ -101,7 +104,7 @@ publicRoutes.get("/verify/:code", async (req, res) => {
     credential: {
       name: `${student.firstName} ${student.lastName}`,
       id: student.walletId,
-      school: student.school ?? "",
+      school: (await currentSchool())?.name ?? student.school ?? "",
       grade: `Grade ${student.yearLevel}`,
       issued: formatDate(link.createdAt),
       expires: link.expiresAt ? formatDate(link.expiresAt) : null,
