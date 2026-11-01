@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import type { Page } from '../types';
+import DataSourceBadge from '../components/DataSourceBadge';
+import { useApiData } from '../lib/api';
 
 interface Props { setPage: (p: Page) => void; }
 
 const templates = [
   {
-    id: 1,
+    id: '1',
     title: 'Critical Thinking in Data Interpretation',
     subject: 'Science',
     grade: 'Grade 10–12',
@@ -18,7 +20,7 @@ const templates = [
     completions: 142,
   },
   {
-    id: 2,
+    id: '2',
     title: 'Collaborative Problem Solving',
     subject: 'Mathematics',
     grade: 'Grade 9–11',
@@ -31,7 +33,7 @@ const templates = [
     completions: 89,
   },
   {
-    id: 3,
+    id: '3',
     title: 'Creative Writing & Adaptability Challenge',
     subject: 'English',
     grade: 'Grade 8–10',
@@ -44,7 +46,7 @@ const templates = [
     completions: 0,
   },
   {
-    id: 4,
+    id: '4',
     title: 'Research Methods & Source Evaluation',
     subject: 'Humanities',
     grade: 'Grade 11–12',
@@ -57,7 +59,7 @@ const templates = [
     completions: 67,
   },
   {
-    id: 5,
+    id: '5',
     title: 'Decision-Making Under Uncertainty',
     subject: 'Economics',
     grade: 'Grade 10–12',
@@ -70,7 +72,7 @@ const templates = [
     completions: 201,
   },
   {
-    id: 6,
+    id: '6',
     title: 'Growth Mindset & Resilience Survey',
     subject: 'Personal Development',
     grade: 'Grade 7–12',
@@ -96,7 +98,16 @@ const skillColor = [
   'bg-indigo-50 text-indigo-700',
 ];
 
+// Demo data, shown when the API server isn't running. The live version comes
+// from GET /api/templates in the same shape.
+const mockLibrary = {
+  stats: { total: 24, drafts: 3, active: 8, inProgress: 3, completions: 1247, completionsThisWeek: 142, averageScore: 71 },
+  templates,
+};
+
 export default function AssessmentTemplatePage({ setPage }: Props) {
+  const library = useApiData('/templates', mockLibrary);
+  const { stats, templates } = library.data;
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('All');
 
@@ -114,6 +125,7 @@ export default function AssessmentTemplatePage({ setPage }: Props) {
           <div className="flex items-center gap-2 mb-1">
             <div className="w-3 h-3 rounded-full bg-purple-500"></div>
             <span className="text-xs font-mono font-600 text-purple-600 uppercase tracking-widest">Assessment System</span>
+            <DataSourceBadge source={library.source} reason={library.offlineReason} />
           </div>
           <h1 className="font-display font-700 text-2xl text-gray-900">Assessment Templates</h1>
           <p className="text-sm text-gray-500 font-body mt-0.5">{templates.length} templates available across all subjects</p>
@@ -127,10 +139,10 @@ export default function AssessmentTemplatePage({ setPage }: Props) {
       {/* Stats row */}
       <div className="grid grid-cols-4 gap-4 mb-6">
         {[
-          { label: 'Total Templates', value: '24', icon: '📋', change: '+3 this month' },
-          { label: 'Active Assessments', value: '8', icon: '✏️', change: '3 in progress' },
-          { label: 'Total Completions', value: '1,247', icon: '✅', change: '+142 this week' },
-          { label: 'Avg. Score', value: '71%', icon: '📊', change: '↑ 4% vs last term' },
+          { label: 'Total Templates', value: String(stats.total), icon: '📋', change: `${stats.drafts} in draft` },
+          { label: 'Active Assessments', value: String(stats.active), icon: '✏️', change: `${stats.inProgress} in progress` },
+          { label: 'Total Completions', value: stats.completions.toLocaleString(), icon: '✅', change: `+${stats.completionsThisWeek} this week` },
+          { label: 'Avg. Score', value: `${stats.averageScore}%`, icon: '📊', change: 'Across all released results' },
         ].map((s) => (
           <div key={s.label} className="bg-white rounded-xl border border-[#E8EAF0] p-4 shadow-sm">
             <div className="flex items-center justify-between mb-2">

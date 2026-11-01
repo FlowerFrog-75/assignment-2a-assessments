@@ -12,6 +12,7 @@ import PublicVerification from './pages/PublicVerification';
 import TeacherClassResults from './pages/TeacherClassResults';
 import TeacherIndividualResults from './pages/TeacherIndividualResults';
 import AccessLogging from './pages/AccessLogging';
+import LedgerDemo from './pages/LedgerDemo';
 
 const fullscreenPages: Page[] = ['login', 'public-verification', 'assessment-interface'];
 
@@ -32,6 +33,7 @@ export default function App() {
       case 'teacher-class': return <TeacherClassResults setPage={setPage} />;
       case 'teacher-individual': return <TeacherIndividualResults setPage={setPage} />;
       case 'access-logging': return <AccessLogging setPage={setPage} />;
+      case 'blockchain-ledger': return <LedgerDemo setPage={setPage} />;
       default: return <LoginPage setPage={setPage} />;
     }
   };

@@ -1,0 +1,18 @@
+{
+  // Type-checking for the Node.js API server and scripts (run with tsx).
+  // The browser app in src/ has its own config in the root tsconfig.json.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true
+  },
+  "include": ["."]
+}

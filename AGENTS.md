@@ -33,3 +33,13 @@ This is the canonical project structure. Start with task-relevant files below. O
 This project uses **Tailwind CSS v4** through the `@tailwindcss/vite` plugin configured in `vite.config.ts`. `src/index.css` imports Tailwind with `@import 'tailwindcss';`. Use Tailwind utility classes directly in JSX and put global CSS or Tailwind v4 theme customization in `src/index.css`. This scaffold does not need a Tailwind config file or PostCSS config.
 
 `src/main.tsx` imports `src/index.css`, so global font wiring belongs in `src/index.css`. Keep CSS `@import` statements first, then add any `@font-face` rules and font-family defaults there.
+
+## Server side (database and blockchain)
+
+The repository also has a Node.js back end. **Nothing in `src/` may import from these folders.** They hold database passwords and signing keys.
+
+- `server/`: Express API (`server/index.ts`, routes in `server/api/`), MongoDB models (`server/db/`), Hyperledger Fabric client (`server/ledger/`). See `server/README.md`.
+- `mongodb/`: self-hosted MongoDB (Docker Compose). See `mongodb/README.md`.
+- `fabric/`: Hyperledger Fabric network and the `skillcoin` chaincode. See `fabric/README.md`.
+
+Screens load live data with `useApiData(path, mockData)` from `src/lib/api.ts`. The page's mock data is the fallback when the API isn't running, as in the Figma Make preview, so screens always render. When changing a wired screen, keep its mock data in the same shape as the API response. `vite.config.ts` proxies `/api` to the API server (`pnpm server`, port 4000).

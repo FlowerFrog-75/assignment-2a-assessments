@@ -16,6 +16,7 @@ const pageMeta: Record<Page, { title: string; breadcrumb: string; color: string;
   'teacher-class': { title: 'Class Results Overview', breadcrumb: 'Teacher Dashboard', color: 'text-emerald-600', badge: 'bg-emerald-100 text-emerald-700' },
   'teacher-individual': { title: 'Individual Student Results', breadcrumb: 'Teacher Dashboard', color: 'text-emerald-600', badge: 'bg-emerald-100 text-emerald-700' },
   'access-logging': { title: 'Access & Audit Logs', breadcrumb: 'Teacher Dashboard', color: 'text-emerald-600', badge: 'bg-emerald-100 text-emerald-700' },
+  'blockchain-ledger': { title: 'Blockchain Ledger', breadcrumb: 'Blockchain', color: 'text-blue-600', badge: 'bg-blue-100 text-blue-700' },
 };
 
 export default function TopNav({ currentPage, setPage }: TopNavProps) {

@@ -1,5 +1,7 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar } from 'recharts';
 import type { Page } from '../types';
+import DataSourceBadge from '../components/DataSourceBadge';
+import { DEMO_STUDENT_WALLET, useApiData } from '../lib/api';
 
 interface Props { setPage: (p: Page) => void; }
 
@@ -24,8 +26,20 @@ const questionBreakdown = [
   { q: 'Q8', score: 5, max: 10 },
 ];
 
-const totalScore = 79;
-const classAvg = 68;
+// Demo data, shown when the API server isn't running. The live version comes
+// from GET /api/students/:walletId/results/latest in the same shape.
+const mockResult = {
+  title: 'Critical Thinking in Data Interpretation',
+  subtitle: 'Completed October 16, 2024 · Science · Grade 11',
+  totalScore: 79,
+  classAvg: 68,
+  grade: 'B+',
+  timeTaken: '38 min',
+  timeRemaining: '7 min remaining',
+  coinsEarned: 128,
+  skillResults,
+  questionBreakdown,
+};
 
 const levelColor: Record<string, string> = {
   Advanced: 'bg-purple-100 text-purple-700',
@@ -35,6 +49,9 @@ const levelColor: Record<string, string> = {
 };
 
 export default function ResultsInterface({ setPage }: Props) {
+  const result = useApiData(`/students/${DEMO_STUDENT_WALLET}/results/latest`, mockResult);
+  const { title, subtitle, totalScore, classAvg, grade, timeTaken, timeRemaining, coinsEarned, skillResults, questionBreakdown } = result.data;
+  const vsClass = totalScore - classAvg;
   const strengths = skillResults.filter(s => s.score >= 80);
   const gaps = skillResults.filter(s => s.score < 75);
 
@@ -46,9 +63,10 @@ export default function ResultsInterface({ setPage }: Props) {
           <div className="flex items-center gap-2 mb-1">
             <div className="w-3 h-3 rounded-full bg-orange-500"></div>
             <span className="text-xs font-mono font-600 text-orange-600 uppercase tracking-widest">Assessment Results</span>
+            <DataSourceBadge source={result.source} reason={result.offlineReason} />
           </div>
-          <h1 className="font-display font-700 text-2xl text-gray-900">Critical Thinking in Data Interpretation</h1>
-          <p className="text-sm text-gray-500 font-body mt-0.5">Completed October 16, 2024 · Science · Grade 11</p>
+          <h1 className="font-display font-700 text-2xl text-gray-900">{title}</h1>
+          <p className="text-sm text-gray-500 font-body mt-0.5">{subtitle}</p>
         </div>
         <div className="flex gap-3">
           <button className="px-4 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-sm font-medium font-body text-gray-600 hover:border-gray-300 transition-all flex items-center gap-2">
@@ -89,9 +107,9 @@ export default function ResultsInterface({ setPage }: Props) {
           <div className="flex-1 grid grid-cols-4 gap-6">
             {[
               { label: 'Your Score', value: `${totalScore}%`, color: 'text-gray-900', sub: 'Out of 100%' },
-              { label: 'Class Average', value: `${classAvg}%`, color: 'text-gray-600', sub: `You're +${totalScore - classAvg}% above` },
-              { label: 'Grade', value: 'B+', color: 'text-orange-600', sub: 'Well done!' },
-              { label: 'Time Taken', value: '38 min', color: 'text-gray-700', sub: '7 min remaining' },
+              { label: 'Class Average', value: `${classAvg}%`, color: 'text-gray-600', sub: vsClass >= 0 ? `You're +${vsClass}% above` : `You're ${-vsClass}% below` },
+              { label: 'Grade', value: grade, color: 'text-orange-600', sub: 'Well done!' },
+              { label: 'Time Taken', value: timeTaken, color: 'text-gray-700', sub: timeRemaining },
             ].map((m) => (
               <div key={m.label}>
                 <div className="text-xs text-gray-400 font-body mb-1">{m.label}</div>
@@ -200,7 +218,7 @@ export default function ResultsInterface({ setPage }: Props) {
           >
             <span className="text-2xl">💎</span>
             <div className="text-left">
-              <div className="font-display font-700">+128 Skill Coins</div>
+              <div className="font-display font-700">+{coinsEarned} Skill Coins</div>
               <div className="text-orange-100 text-xs font-body">Earned from this assessment</div>
             </div>
           </button>
