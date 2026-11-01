@@ -8,7 +8,8 @@ export type Page =
   | 'public-verification'
   | 'teacher-class'
   | 'teacher-individual'
-  | 'access-logging';
+  | 'access-logging'
+  | 'blockchain-ledger';
 
 export type UserRole = 'student' | 'teacher' | 'admin';
 

@@ -23,6 +23,10 @@ const teacherNav: { id: Page; label: string; icon: string }[] = [
   { id: 'access-logging', label: 'Access Logs', icon: '🔒' },
 ];
 
+const blockchainNav: { id: Page; label: string; icon: string }[] = [
+  { id: 'blockchain-ledger', label: 'Blockchain Ledger', icon: '⛓️' },
+];
+
 export default function Sidebar({ currentPage, setPage }: SidebarProps) {
   return (
     <aside className="flex flex-col w-64 min-h-screen bg-[#1A1B2E] text-white fixed left-0 top-0 bottom-0 z-20">
@@ -108,6 +112,32 @@ export default function Sidebar({ currentPage, setPage }: SidebarProps) {
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 mb-0.5 text-left ${
                 currentPage === item.id
                   ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/30'
+                  : 'text-white/60 hover:bg-white/5 hover:text-white/90'
+              }`}
+            >
+              <span className="text-base">{item.icon}</span>
+              <span className="font-body">{item.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="border-t border-white/5 my-3 mx-4"></div>
+
+        {/* Blockchain (Hyperledger Fabric) */}
+        <div className="px-4 mb-1">
+          <div className="flex items-center gap-2 px-2 py-1.5 mb-1">
+            <div className="w-2 h-2 rounded-full bg-blue-400"></div>
+            <span className="text-[10px] font-mono font-600 tracking-widest uppercase text-blue-400">
+              Blockchain
+            </span>
+          </div>
+          {blockchainNav.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setPage(item.id)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 mb-0.5 text-left ${
+                currentPage === item.id
+                  ? 'bg-blue-600/30 text-blue-300 border border-blue-500/30'
                   : 'text-white/60 hover:bg-white/5 hover:text-white/90'
               }`}
             >

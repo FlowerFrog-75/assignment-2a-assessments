@@ -1,14 +1,18 @@
 import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import type { Page } from '../types';
+import DataSourceBadge from '../components/DataSourceBadge';
+import { selectedStudent, useApiData } from '../lib/api';
 
 interface Props { setPage: (p: Page) => void; }
 
-const student = {
+const mockStudent = {
   name: 'Jordan Smith',
   id: 'DSW-2024-JS-1147',
   grade: 'Grade 11',
   avatar: 'JS',
   overall: 79,
+  topSkill: 'Collaboration',
+  focusArea: 'Decision-Making',
   trend: '+6% this term',
   assessments: [
     { title: 'Critical Thinking in Data Interpretation', subject: 'Science', date: 'Oct 16', score: 79, status: 'Graded' },
@@ -32,10 +36,39 @@ const student = {
   ],
 };
 
-const radarData = student.skills.map(s => ({ skill: s.short, Jordan: s.score, classAvg: s.classAvg }));
-const compareData = student.skills.map(s => ({ skill: s.short, student: s.score, class: s.classAvg }));
+// Demo data, shown when the API server isn't running. The live version comes
+// from GET /api/students/:walletId/profile in the same shape.
+const mockProfile = { student: mockStudent };
 
 export default function TeacherIndividualResults({ setPage }: Props) {
+  const profile = useApiData(`/students/${selectedStudent()}/profile`, mockProfile);
+  const { student } = profile.data;
+  const firstName = student.name.split(' ')[0];
+  const radarData = student.skills.map(s => ({ skill: s.short, student: s.score, classAvg: s.classAvg }));
+  const compareData = student.skills.map(s => ({ skill: s.short, student: s.score, class: s.classAvg }));
+
+  // The API refuses (403) when the student hasn't consented. The attempt is still audit-logged.
+  if (profile.error) {
+    return (
+      <div className="min-h-screen bg-[#F8F9FC] p-6">
+        <button
+          onClick={() => setPage('teacher-class')}
+          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-emerald-700 font-body transition-colors"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+          Class View
+        </button>
+        <div className="max-w-lg mx-auto mt-16 bg-white rounded-2xl border border-[#E8EAF0] shadow-sm p-8 text-center">
+          <div className="text-4xl mb-3">🔒</div>
+          <h1 className="font-display font-700 text-xl text-gray-900 mb-2">
+            {profile.error.code === 'consent_required' ? 'Student consent required' : 'Results unavailable'}
+          </h1>
+          <p className="text-sm text-gray-500 font-body leading-relaxed">{profile.error.message}</p>
+          <p className="text-xs text-gray-400 font-body mt-4">This access attempt has been recorded in the Access Logs.</p>
+        </div>
+      </div>
+    );
+  }
   const getScoreColor = (score: number) => {
     if (score >= 80) return 'text-emerald-700 bg-emerald-50';
     if (score >= 65) return 'text-orange-700 bg-orange-50';
@@ -58,6 +91,7 @@ export default function TeacherIndividualResults({ setPage }: Props) {
             <div className="flex items-center gap-2 mb-1">
               <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
               <span className="text-xs font-mono font-600 text-emerald-600 uppercase tracking-widest">Individual Results</span>
+              <DataSourceBadge source={profile.source} reason={profile.offlineReason} />
             </div>
             <h1 className="font-display font-700 text-2xl text-gray-900">{student.name}</h1>
             <p className="text-sm text-gray-500 font-body mt-0.5">{student.grade} · {student.id} · {student.trend}</p>
@@ -86,8 +120,8 @@ export default function TeacherIndividualResults({ setPage }: Props) {
             { label: 'Overall Score', value: `${student.overall}%`, color: 'text-emerald-700' },
             { label: 'Assessments', value: student.assessments.length, color: 'text-gray-900' },
             { label: 'Completed', value: student.assessments.filter(a => a.status === 'Graded').length, color: 'text-gray-900' },
-            { label: 'Top Skill', value: 'Collaboration', color: 'text-purple-700' },
-            { label: 'Focus Area', value: 'Decision-Making', color: 'text-orange-700' },
+            { label: 'Top Skill', value: student.topSkill, color: 'text-purple-700' },
+            { label: 'Focus Area', value: student.focusArea, color: 'text-orange-700' },
           ].map((m) => (
             <div key={m.label}>
               <div className="text-xs text-gray-400 font-body mb-0.5">{m.label}</div>
@@ -159,7 +193,7 @@ export default function TeacherIndividualResults({ setPage }: Props) {
                 <RadarChart data={radarData}>
                   <PolarGrid stroke="#F0F2F7" />
                   <PolarAngleAxis dataKey="skill" tick={{ fontSize: 10, fill: '#9CA3AF', fontFamily: 'Inter' }} />
-                  <Radar name="Jordan" dataKey="Jordan" stroke="#F97316" fill="#F97316" fillOpacity={0.2} strokeWidth={2} dot={{ fill: '#F97316', r: 3 }} />
+                  <Radar name={firstName} dataKey="student" stroke="#F97316" fill="#F97316" fillOpacity={0.2} strokeWidth={2} dot={{ fill: '#F97316', r: 3 }} />
                   <Radar name="Class Avg" dataKey="classAvg" stroke="#10B981" fill="#10B981" fillOpacity={0.1} strokeWidth={1.5} strokeDasharray="4 2" />
                   <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E8EAF0' }} />
                 </RadarChart>
@@ -170,14 +204,14 @@ export default function TeacherIndividualResults({ setPage }: Props) {
                   <CartesianGrid strokeDasharray="3 3" stroke="#F0F2F7" />
                   <XAxis dataKey="skill" tick={{ fontSize: 9, fill: '#9CA3AF', fontFamily: 'Inter' }} axisLine={false} tickLine={false} />
                   <YAxis domain={[0, 100]} tick={{ fontSize: 9, fill: '#9CA3AF', fontFamily: 'Inter' }} axisLine={false} tickLine={false} />
-                  <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E8EAF0' }} formatter={(v, n) => [`${v}%`, n === 'student' ? 'Jordan' : 'Class Avg']} />
+                  <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E8EAF0' }} formatter={(v, n) => [`${v}%`, n === 'student' ? firstName : 'Class Avg']} />
                   <Bar dataKey="student" fill="#F97316" radius={[3, 3, 0, 0]} name="student" />
                   <Bar dataKey="class" fill="#10B981" radius={[3, 3, 0, 0]} name="class" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
             <div className="flex items-center gap-6 mt-3 text-xs font-body text-gray-400">
-              <div className="flex items-center gap-1.5"><div className="w-3 h-2 rounded bg-orange-400"></div> Jordan Smith</div>
+              <div className="flex items-center gap-1.5"><div className="w-3 h-2 rounded bg-orange-400"></div> {student.name}</div>
               <div className="flex items-center gap-1.5"><div className="w-3 h-2 rounded bg-emerald-500"></div> Class Average</div>
             </div>
           </div>

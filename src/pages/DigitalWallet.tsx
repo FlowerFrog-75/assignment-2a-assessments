@@ -1,9 +1,11 @@
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import type { Page } from '../types';
+import DataSourceBadge from '../components/DataSourceBadge';
+import { DEMO_STUDENT_WALLET, useApiData } from '../lib/api';
 
 interface Props { setPage: (p: Page) => void; }
 
-const skills = [
+const mockSkills = [
   { name: 'Analytical Thinking', coins: 156, level: 4, maxLevel: 5, badge: '🔍', color: '#7C3AED', progress: 78 },
   { name: 'Research', coins: 130, level: 3, maxLevel: 5, badge: '📚', color: '#2563EB', progress: 65 },
   { name: 'Critical Thinking', coins: 164, level: 4, maxLevel: 5, badge: '🧠', color: '#DC2626', progress: 82 },
@@ -13,21 +15,42 @@ const skills = [
   { name: 'Adaptability', coins: 148, level: 3, maxLevel: 5, badge: '🌱', color: '#F97316', progress: 74 },
 ];
 
-const achievements = [
-  { id: 1, title: 'Research Pioneer', desc: 'Completed 5 research assessments with 70%+ score', date: 'Oct 14, 2024', badge: '🔬', verified: true },
-  { id: 2, title: 'Critical Mind', desc: 'Achieved Advanced level in Critical Thinking', date: 'Oct 9, 2024', badge: '🧠', verified: true },
-  { id: 3, title: 'Team Player', desc: 'Highest collaboration score in class', date: 'Sep 28, 2024', badge: '🤝', verified: true },
-  { id: 4, title: 'First Assessment', desc: 'Completed first Digital Skills assessment', date: 'Sep 5, 2024', badge: '🌟', verified: true },
+const mockAchievements = [
+  { id: '1', code: 'research-pioneer', title: 'Research Pioneer', desc: 'Completed 5 research assessments with 70%+ score', date: 'Oct 14, 2024', badge: '🔬', verified: true },
+  { id: '2', code: 'critical-mind', title: 'Critical Mind', desc: 'Achieved Advanced level in Critical Thinking', date: 'Oct 9, 2024', badge: '🧠', verified: true },
+  { id: '3', code: 'team-player', title: 'Team Player', desc: 'Highest collaboration score in class', date: 'Sep 28, 2024', badge: '🤝', verified: true },
+  { id: '4', code: 'first-assessment', title: 'First Assessment', desc: 'Completed first Digital Skills assessment', date: 'Sep 5, 2024', badge: '🌟', verified: true },
 ];
 
-const coinHistory = [
+const mockCoinHistory = [
   { month: 'Jul', coins: 420 },
   { month: 'Aug', coins: 680 },
   { month: 'Sep', coins: 890 },
   { month: 'Oct', coins: 1034 },
 ];
 
+// Look of each skill and badge (the data itself comes from the API).
+const SKILL_STYLE: Record<string, { badge: string; color: string }> = Object.fromEntries(
+  mockSkills.map((s) => [s.name, { badge: s.badge, color: s.color }]),
+);
+const BADGE_ICON: Record<string, string> = Object.fromEntries(mockAchievements.map((a) => [a.code, a.badge]));
+
+// Demo data, shown when the API server isn't running. The live version comes
+// from GET /api/students/:walletId/wallet in the same shape.
+const mockWallet = {
+  student: { name: 'Jordan Smith', grade: 'Grade 11', walletId: 'DSW-2024-JS-1147' },
+  stats: { assessments: 15, badges: 7, levelAverage: '3.6' },
+  skills: mockSkills.map(({ name, coins, level, maxLevel, progress }) => ({ key: name, name, coins, level, maxLevel, progress })),
+  achievements: mockAchievements.map(({ badge: _badge, ...a }) => a),
+  coinHistory: mockCoinHistory,
+  ledger: { committed: 0, total: 0 },
+};
+
 export default function DigitalWallet({ setPage }: Props) {
+  const wallet = useApiData(`/students/${DEMO_STUDENT_WALLET}/wallet`, mockWallet);
+  const { student, stats, coinHistory, ledger } = wallet.data;
+  const skills = wallet.data.skills.map((s) => ({ ...s, ...(SKILL_STYLE[s.name] ?? { badge: '⭐', color: '#7C3AED' }) }));
+  const achievements = wallet.data.achievements.map((a) => ({ ...a, badge: BADGE_ICON[a.code] ?? '🏅' }));
   const totalCoins = skills.reduce((a, b) => a + b.coins, 0);
 
   return (
@@ -38,9 +61,10 @@ export default function DigitalWallet({ setPage }: Props) {
           <div className="flex items-center gap-2 mb-1">
             <div className="w-3 h-3 rounded-full bg-orange-500"></div>
             <span className="text-xs font-mono font-600 text-orange-600 uppercase tracking-widest">Student Interface</span>
+            <DataSourceBadge source={wallet.source} reason={wallet.offlineReason} />
           </div>
           <h1 className="font-display font-700 text-2xl text-gray-900">Digital Skills Wallet</h1>
-          <p className="text-sm text-gray-500 font-body mt-0.5">Jordan Smith · Grade 11 · ID: DSW-2024-JS-1147</p>
+          <p className="text-sm text-gray-500 font-body mt-0.5">{student.name} · {student.grade} · ID: {student.walletId}</p>
         </div>
         <div className="flex gap-3">
           <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-sm font-medium font-body text-gray-600 hover:border-orange-200 hover:text-orange-700 transition-all">
@@ -64,13 +88,18 @@ export default function DigitalWallet({ setPage }: Props) {
           <div className="text-center">
             <div className="font-display font-800 text-5xl text-white mb-1">{totalCoins.toLocaleString()}</div>
             <div className="text-orange-300 text-sm font-body font-500">Total Skill Coins</div>
+            {wallet.source === 'live' && ledger.total > 0 && (
+              <div className="text-[11px] text-emerald-300 font-body mt-1" title="Each coin is a transaction on the Hyperledger Fabric ledger">
+                ⛓ {ledger.committed}/{ledger.total} on blockchain
+              </div>
+            )}
           </div>
           <div className="w-px h-16 bg-white/10"></div>
           <div className="grid grid-cols-3 gap-6 flex-1">
             {[
-              { label: 'Assessments', value: '15', icon: '📋' },
-              { label: 'Badges Earned', value: '7', icon: '🏅' },
-              { label: 'Skill Level Avg.', value: '3.6/5', icon: '⭐' },
+              { label: 'Assessments', value: String(stats.assessments), icon: '📋' },
+              { label: 'Badges Earned', value: String(stats.badges), icon: '🏅' },
+              { label: 'Skill Level Avg.', value: `${stats.levelAverage}/5`, icon: '⭐' },
             ].map((s) => (
               <div key={s.label}>
                 <div className="text-2xl mb-1">{s.icon}</div>

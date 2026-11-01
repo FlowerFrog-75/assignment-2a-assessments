@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import type { Page } from '../types';
+import DataSourceBadge from '../components/DataSourceBadge';
+import { useApiData } from '../lib/api';
 
 interface Props { setPage: (p: Page) => void; }
 
-const logs = [
+const mockLogs = [
   { id: 'LOG-0841', user: 'Jordan Smith', role: 'Student', action: 'Assessment Started', resource: 'Critical Thinking in Data Interpretation', ip: '192.168.1.42', time: '2024-10-16 14:23:11', status: 'Success', flag: false },
   { id: 'LOG-0842', user: 'Maya Patel', role: 'Student', action: 'Assessment Submitted', resource: 'Research Methods & Source Evaluation', ip: '192.168.1.55', time: '2024-10-16 14:41:07', status: 'Success', flag: false },
   { id: 'LOG-0843', user: 'Ethan Clarke', role: 'Student', action: 'Assessment Abandoned', resource: 'Decision-Making Under Uncertainty', ip: '192.168.1.38', time: '2024-10-16 13:58:33', status: 'Warning', flag: true },
@@ -31,11 +33,22 @@ const roleColor: Record<string, string> = {
   External: 'bg-blue-50 text-blue-700',
 };
 
+// Demo data, shown when the API server isn't running. The live version comes
+// from GET /api/audit-logs in the same shape.
+const mockAudit = {
+  lastUpdated: 'October 16, 2024 at 16:02',
+  chain: { ok: true, checked: mockLogs.length } as { ok: boolean; checked: number; brokenAt?: number; reason?: string },
+  logs: mockLogs.map((log) => ({ ...log, reason: null as string | null, hash: '' })),
+};
+type LogEntry = (typeof mockAudit.logs)[number];
+
 export default function AccessLogging({ setPage }: Props) {
+  const audit = useApiData('/audit-logs', mockAudit);
+  const { logs, chain, lastUpdated } = audit.data;
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('All');
   const [filterRole, setFilterRole] = useState('All');
-  const [selectedLog, setSelectedLog] = useState<typeof logs[0] | null>(null);
+  const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
 
   const filtered = logs.filter(l => {
     const matchSearch = l.user.toLowerCase().includes(search.toLowerCase()) ||
@@ -58,11 +71,22 @@ export default function AccessLogging({ setPage }: Props) {
           <div className="flex items-center gap-2 mb-1">
             <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
             <span className="text-xs font-mono font-600 text-emerald-600 uppercase tracking-widest">Teacher Dashboard</span>
+            <DataSourceBadge source={audit.source} reason={audit.offlineReason} />
           </div>
           <h1 className="font-display font-700 text-2xl text-gray-900">Access & Audit Logs</h1>
           <p className="text-sm text-gray-500 font-body mt-0.5">
-            Last updated: October 16, 2024 at 16:02 · {logs.length} events recorded today
+            Last updated: {lastUpdated} · {logs.length} events recorded
           </p>
+          {audit.source === 'live' && (
+            <p
+              className={`inline-flex items-center gap-1.5 mt-2 text-xs font-body px-2.5 py-1 rounded-full ${chain.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}
+              title="Each log entry stores the hash of the one before it, so any edit or deletion breaks the chain"
+            >
+              {chain.ok
+                ? `🔗 Tamper check passed: all ${chain.checked} entries' hash chain intact`
+                : `⚠️ Tamper check failed at entry #${chain.brokenAt}: ${chain.reason}`}
+            </p>
+          )}
         </div>
         <div className="flex gap-3">
           <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-sm font-medium font-body text-gray-600 hover:border-emerald-200 transition-all">
@@ -226,6 +250,8 @@ export default function AccessLogging({ setPage }: Props) {
                 { label: 'Action', value: selectedLog.action, mono: false },
                 { label: 'Resource', value: selectedLog.resource, mono: false },
                 { label: 'IP Address', value: selectedLog.ip, mono: true },
+                ...(selectedLog.reason ? [{ label: 'Reason', value: selectedLog.reason, mono: false }] : []),
+                ...(selectedLog.hash ? [{ label: 'Entry hash (SHA-256)', value: `${selectedLog.hash.slice(0, 16)}…`, mono: true }] : []),
               ].map((field) => (
                 <div key={field.label} className="border-t border-[#F8F9FC] pt-3">
                   <div className="text-xs text-gray-400 font-body mb-1">{field.label}</div>

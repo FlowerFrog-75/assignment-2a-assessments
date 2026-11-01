@@ -1,5 +1,7 @@
 import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer, Tooltip } from 'recharts';
 import type { Page } from '../types';
+import DataSourceBadge from '../components/DataSourceBadge';
+import { DEMO_STUDENT_WALLET, useApiData } from '../lib/api';
 
 interface Props { setPage: (p: Page) => void; }
 
@@ -13,19 +15,27 @@ const skills = [
   { name: 'Adaptability / Growth Mindset', short: 'Adaptability', score: 74, coins: 148, trend: '+9' },
 ];
 
-const radarData = skills.map(s => ({ skill: s.short, score: s.score, fullMark: 100 }));
-
 const activeAssessments = [
-  { id: 1, title: 'Critical Thinking in Data Interpretation', subject: 'Science', due: 'Due in 2 days', progress: 33, questions: 24, done: 8 },
-  { id: 2, title: 'Decision-Making Under Uncertainty', subject: 'Economics', due: 'Due tomorrow', progress: 0, questions: 20, done: 0 },
-  { id: 3, title: 'Research Methods & Source Evaluation', subject: 'Humanities', due: 'Due in 5 days', progress: 75, questions: 28, done: 21 },
+  { id: '1', title: 'Critical Thinking in Data Interpretation', subject: 'Science', due: 'Due in 2 days', progress: 33, questions: 24, done: 8 },
+  { id: '2', title: 'Decision-Making Under Uncertainty', subject: 'Economics', due: 'Due tomorrow', progress: 0, questions: 20, done: 0 },
+  { id: '3', title: 'Research Methods & Source Evaluation', subject: 'Humanities', due: 'Due in 5 days', progress: 75, questions: 28, done: 21 },
 ];
 
 const completedAssessments = [
-  { id: 1, title: 'Collaborative Problem Solving', subject: 'Mathematics', date: 'Oct 14, 2024', score: 84, grade: 'A' },
-  { id: 2, title: 'Growth Mindset & Resilience Survey', subject: 'Personal Development', date: 'Oct 9, 2024', score: 91, grade: 'A+' },
-  { id: 3, title: 'Creative Writing Challenge', subject: 'English', date: 'Oct 2, 2024', score: 73, grade: 'B' },
+  { id: '1', title: 'Collaborative Problem Solving', subject: 'Mathematics', date: 'Oct 14, 2024', score: 84, grade: 'A' },
+  { id: '2', title: 'Growth Mindset & Resilience Survey', subject: 'Personal Development', date: 'Oct 9, 2024', score: 91, grade: 'A+' },
+  { id: '3', title: 'Creative Writing Challenge', subject: 'English', date: 'Oct 2, 2024', score: 73, grade: 'B' },
 ];
+
+// Demo data, shown when the API server isn't running. The live version comes
+// from GET /api/students/:walletId/dashboard in the same shape.
+const mockDashboard = {
+  student: { firstName: 'Jordan', subtitle: 'Wednesday, October 16 · Grade 11 · Room 204' },
+  stats: { active: 3, completed: 12, averageScore: 76, badges: 7 },
+  skills,
+  activeAssessments,
+  completedAssessments,
+};
 
 const gradeColor = (g: string) => {
   if (g.startsWith('A')) return 'text-emerald-600 bg-emerald-50';
@@ -34,6 +44,9 @@ const gradeColor = (g: string) => {
 };
 
 export default function StudentDashboard({ setPage }: Props) {
+  const dashboard = useApiData(`/students/${DEMO_STUDENT_WALLET}/dashboard`, mockDashboard);
+  const { student, stats, skills, activeAssessments, completedAssessments } = dashboard.data;
+  const radarData = skills.map(s => ({ skill: s.short, score: s.score, fullMark: 100 }));
   const totalCoins = skills.reduce((a, b) => a + b.coins, 0);
 
   return (
@@ -44,11 +57,12 @@ export default function StudentDashboard({ setPage }: Props) {
           <div className="flex items-center gap-2 mb-1">
             <div className="w-3 h-3 rounded-full bg-orange-500"></div>
             <span className="text-xs font-mono font-600 text-orange-600 uppercase tracking-widest">Student Interface</span>
+            <DataSourceBadge source={dashboard.source} reason={dashboard.offlineReason} />
           </div>
           <h1 className="font-display font-700 text-2xl text-gray-900">
-            Good morning, Jordan 👋
+            Good morning, {student.firstName} 👋
           </h1>
-          <p className="text-sm text-gray-500 font-body mt-0.5">Wednesday, October 16 · Grade 11 · Room 204</p>
+          <p className="text-sm text-gray-500 font-body mt-0.5">{student.subtitle}</p>
         </div>
         <button
           onClick={() => setPage('digital-wallet')}
@@ -65,10 +79,10 @@ export default function StudentDashboard({ setPage }: Props) {
       {/* Top stats */}
       <div className="grid grid-cols-4 gap-4 mb-6">
         {[
-          { label: 'Active Assessments', value: '3', icon: '✏️', color: 'text-orange-600', bg: 'bg-orange-50' },
-          { label: 'Completed', value: '12', icon: '✅', color: 'text-emerald-600', bg: 'bg-emerald-50' },
-          { label: 'Average Score', value: '76%', icon: '📊', color: 'text-purple-600', bg: 'bg-purple-50' },
-          { label: 'Skill Badges', value: '7', icon: '🏅', color: 'text-blue-600', bg: 'bg-blue-50' },
+          { label: 'Active Assessments', value: String(stats.active), icon: '✏️', color: 'text-orange-600', bg: 'bg-orange-50' },
+          { label: 'Completed', value: String(stats.completed), icon: '✅', color: 'text-emerald-600', bg: 'bg-emerald-50' },
+          { label: 'Average Score', value: `${stats.averageScore}%`, icon: '📊', color: 'text-purple-600', bg: 'bg-purple-50' },
+          { label: 'Skill Badges', value: String(stats.badges), icon: '🏅', color: 'text-blue-600', bg: 'bg-blue-50' },
         ].map((s) => (
           <div key={s.label} className="bg-white rounded-xl border border-[#E8EAF0] p-4 shadow-sm">
             <div className={`w-9 h-9 rounded-lg ${s.bg} flex items-center justify-center text-lg mb-3`}>{s.icon}</div>

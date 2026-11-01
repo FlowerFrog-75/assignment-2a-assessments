@@ -37,12 +37,20 @@ react(),
       watch: {
         ignored: [
           '**/.figma/**',
+          // Server-side folders: not part of the browser app.
+          '**/server/**',
+          '**/fabric/**',
+          '**/mongodb/**',
 ],
       },
+      // API server (server/index.ts, run with `pnpm server`). If it isn't
+      // running, screens fall back to their built-in demo data.
+      proxy: { '/api': process.env.API_URL || 'http://localhost:4000' },
     },
     preview: {
       host: process.env.FIGMA_DEV_SERVER_HOST || '0.0.0.0',
       port: parseInt(process.env.PORT || '8443'),
+      proxy: { '/api': process.env.API_URL || 'http://localhost:4000' },
     },
   }
 })

@@ -1,0 +1,160 @@
+# Channel configuration for the Digital Skills Wallet network. configtxgen
+# turns the SkillsChannel profile below into the channel's genesis block.
+# Paths are relative to this file.
+# Reference: https://hyperledger-fabric.readthedocs.io/en/release-2.5/create_channel/create_channel_config.html
+
+Organizations:
+  - &OrdererOrg
+    Name: OrdererOrg
+    ID: OrdererMSP
+    MSPDir: ../organizations/ordererOrganizations/dsw.example/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('OrdererMSP.member')"
+      Writers:
+        Type: Signature
+        Rule: "OR('OrdererMSP.member')"
+      Admins:
+        Type: Signature
+        Rule: "OR('OrdererMSP.admin')"
+    OrdererEndpoints:
+      - orderer.dsw.example:7050
+
+  - &School
+    Name: SchoolMSP
+    ID: SchoolMSP
+    MSPDir: ../organizations/peerOrganizations/school.dsw.example/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('SchoolMSP.admin', 'SchoolMSP.peer', 'SchoolMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('SchoolMSP.admin', 'SchoolMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('SchoolMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('SchoolMSP.peer')"
+    # Anchor peers let each organisation's peers discover the other's. The
+    # Fabric Gateway needs that to collect endorsements from both organisations.
+    AnchorPeers:
+      - Host: peer0.school.dsw.example
+        Port: 7051
+
+  - &Kanavoogle
+    Name: KanavoogleMSP
+    ID: KanavoogleMSP
+    MSPDir: ../organizations/peerOrganizations/kanavoogle.dsw.example/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('KanavoogleMSP.admin', 'KanavoogleMSP.peer', 'KanavoogleMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('KanavoogleMSP.admin', 'KanavoogleMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('KanavoogleMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('KanavoogleMSP.peer')"
+    AnchorPeers:
+      - Host: peer0.kanavoogle.dsw.example
+        Port: 7051
+
+Capabilities:
+  Channel: &ChannelCapabilities
+    V2_0: true
+  Orderer: &OrdererCapabilities
+    V2_0: true
+  Application: &ApplicationCapabilities
+    V2_5: true
+
+Application: &ApplicationDefaults
+  Organizations:
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+    # Approving or upgrading chaincode needs a majority of organisations
+    # (with two organisations, that means both).
+    LifecycleEndorsement:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Endorsement"
+    Endorsement:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Endorsement"
+  Capabilities:
+    <<: *ApplicationCapabilities
+
+Orderer: &OrdererDefaults
+  # Raft consensus. One orderer is enough for a demo. Production should run
+  # at least three (ideally run by different organisations) so the network
+  # survives a node failing.
+  OrdererType: etcdraft
+  Addresses:
+    - orderer.dsw.example:7050
+  EtcdRaft:
+    Consenters:
+      - Host: orderer.dsw.example
+        Port: 7050
+        ClientTLSCert: ../organizations/ordererOrganizations/dsw.example/orderers/orderer.dsw.example/tls/server.crt
+        ServerTLSCert: ../organizations/ordererOrganizations/dsw.example/orderers/orderer.dsw.example/tls/server.crt
+  # Cut a block after 1 second or 10 transactions, whichever comes first.
+  BatchTimeout: 1s
+  BatchSize:
+    MaxMessageCount: 10
+    AbsoluteMaxBytes: 99 MB
+    PreferredMaxBytes: 512 KB
+  Organizations:
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+    BlockValidation:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+
+Channel: &ChannelDefaults
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+  Capabilities:
+    <<: *ChannelCapabilities
+
+Profiles:
+  SkillsChannel:
+    <<: *ChannelDefaults
+    Orderer:
+      <<: *OrdererDefaults
+      Organizations:
+        - *OrdererOrg
+      Capabilities: *OrdererCapabilities
+    Application:
+      <<: *ApplicationDefaults
+      Organizations:
+        - *School
+        - *Kanavoogle
+      Capabilities: *ApplicationCapabilities

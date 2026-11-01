@@ -1,0 +1,139 @@
+# Hyperledger Fabric 2.5 network for the Digital Skills Wallet.
+# Start it with `pnpm fabric:up` (fabric/network.sh), not directly: the
+# script generates the certificates, creates the channel and deploys the
+# chaincode first.
+#
+#   orderer.dsw.example           Raft ordering service (orders transactions into blocks)
+#   peer0.school.dsw.example      the school's peer (holds a copy of the ledger)
+#   peer0.kanavoogle.dsw.example  Kanavoogle's peer (holds a copy of the ledger)
+#   skillcoin-school              the school's copy of the skillcoin chaincode
+#   skillcoin-kanavoogle          Kanavoogle's copy of the skillcoin chaincode
+
+name: dsw-fabric
+
+x-peer-env: &peer-env
+  FABRIC_LOGGING_SPEC: INFO
+  CORE_PEER_LISTENADDRESS: 0.0.0.0:7051
+  CORE_PEER_MSPCONFIGPATH: /etc/hyperledger/fabric/msp
+  CORE_PEER_TLS_ENABLED: "true"
+  CORE_PEER_TLS_CERT_FILE: /etc/hyperledger/fabric/tls/server.crt
+  CORE_PEER_TLS_KEY_FILE: /etc/hyperledger/fabric/tls/server.key
+  CORE_PEER_TLS_ROOTCERT_FILE: /etc/hyperledger/fabric/tls/ca.crt
+  CORE_PEER_PROFILE_ENABLED: "false"
+  # Chaincode runs as its own service (see skillcoin-* below), so peers never
+  # need access to the Docker socket.
+  CORE_VM_ENDPOINT: ""
+  CORE_OPERATIONS_LISTENADDRESS: 0.0.0.0:9443
+  CORE_METRICS_PROVIDER: prometheus
+
+services:
+  orderer.dsw.example:
+    image: hyperledger/fabric-orderer:${FABRIC_VERSION:-2.5.16}
+    restart: unless-stopped
+    environment:
+      FABRIC_LOGGING_SPEC: INFO
+      ORDERER_GENERAL_LISTENADDRESS: 0.0.0.0
+      ORDERER_GENERAL_LISTENPORT: "7050"
+      ORDERER_GENERAL_LOCALMSPID: OrdererMSP
+      ORDERER_GENERAL_LOCALMSPDIR: /var/hyperledger/orderer/msp
+      ORDERER_GENERAL_TLS_ENABLED: "true"
+      ORDERER_GENERAL_TLS_PRIVATEKEY: /var/hyperledger/orderer/tls/server.key
+      ORDERER_GENERAL_TLS_CERTIFICATE: /var/hyperledger/orderer/tls/server.crt
+      ORDERER_GENERAL_TLS_ROOTCAS: "[/var/hyperledger/orderer/tls/ca.crt]"
+      ORDERER_GENERAL_CLUSTER_CLIENTCERTIFICATE: /var/hyperledger/orderer/tls/server.crt
+      ORDERER_GENERAL_CLUSTER_CLIENTPRIVATEKEY: /var/hyperledger/orderer/tls/server.key
+      ORDERER_GENERAL_CLUSTER_ROOTCAS: "[/var/hyperledger/orderer/tls/ca.crt]"
+      # Channels are created with the channel participation API (osnadmin),
+      # not a system channel.
+      ORDERER_GENERAL_BOOTSTRAPMETHOD: none
+      ORDERER_CHANNELPARTICIPATION_ENABLED: "true"
+      ORDERER_ADMIN_LISTENADDRESS: 0.0.0.0:7053
+      ORDERER_ADMIN_TLS_ENABLED: "true"
+      ORDERER_ADMIN_TLS_CERTIFICATE: /var/hyperledger/orderer/tls/server.crt
+      ORDERER_ADMIN_TLS_PRIVATEKEY: /var/hyperledger/orderer/tls/server.key
+      ORDERER_ADMIN_TLS_ROOTCAS: "[/var/hyperledger/orderer/tls/ca.crt]"
+      ORDERER_ADMIN_TLS_CLIENTROOTCAS: "[/var/hyperledger/orderer/tls/ca.crt]"
+      ORDERER_OPERATIONS_LISTENADDRESS: 0.0.0.0:9443
+      ORDERER_METRICS_PROVIDER: prometheus
+    volumes:
+      - ./organizations/ordererOrganizations/dsw.example/orderers/orderer.dsw.example/msp:/var/hyperledger/orderer/msp:ro
+      - ./organizations/ordererOrganizations/dsw.example/orderers/orderer.dsw.example/tls:/var/hyperledger/orderer/tls:ro
+      - orderer-data:/var/hyperledger/production/orderer
+    networks: [fabric]
+
+  peer0.school.dsw.example:
+    image: hyperledger/fabric-peer:${FABRIC_VERSION:-2.5.16}
+    restart: unless-stopped
+    environment:
+      <<: *peer-env
+      CORE_PEER_ID: peer0.school.dsw.example
+      CORE_PEER_ADDRESS: peer0.school.dsw.example:7051
+      CORE_PEER_LOCALMSPID: SchoolMSP
+      CORE_PEER_GOSSIP_BOOTSTRAP: peer0.school.dsw.example:7051
+      CORE_PEER_GOSSIP_EXTERNALENDPOINT: peer0.school.dsw.example:7051
+      CHAINCODE_AS_A_SERVICE_BUILDER_CONFIG: '{"peername":"peer0school"}'
+    volumes:
+      - ./organizations/peerOrganizations/school.dsw.example/peers/peer0.school.dsw.example/msp:/etc/hyperledger/fabric/msp:ro
+      - ./organizations/peerOrganizations/school.dsw.example/peers/peer0.school.dsw.example/tls:/etc/hyperledger/fabric/tls:ro
+      - peer0-school-data:/var/hyperledger/production
+    ports:
+      # The web app connects here (Fabric Gateway). Localhost only by default.
+      - "${FABRIC_BIND_IP:-127.0.0.1}:7051:7051"
+    depends_on: [orderer.dsw.example]
+    networks: [fabric]
+
+  peer0.kanavoogle.dsw.example:
+    image: hyperledger/fabric-peer:${FABRIC_VERSION:-2.5.16}
+    restart: unless-stopped
+    environment:
+      <<: *peer-env
+      CORE_PEER_ID: peer0.kanavoogle.dsw.example
+      CORE_PEER_ADDRESS: peer0.kanavoogle.dsw.example:7051
+      CORE_PEER_LOCALMSPID: KanavoogleMSP
+      CORE_PEER_GOSSIP_BOOTSTRAP: peer0.kanavoogle.dsw.example:7051
+      CORE_PEER_GOSSIP_EXTERNALENDPOINT: peer0.kanavoogle.dsw.example:7051
+      CHAINCODE_AS_A_SERVICE_BUILDER_CONFIG: '{"peername":"peer0kanavoogle"}'
+    volumes:
+      - ./organizations/peerOrganizations/kanavoogle.dsw.example/peers/peer0.kanavoogle.dsw.example/msp:/etc/hyperledger/fabric/msp:ro
+      - ./organizations/peerOrganizations/kanavoogle.dsw.example/peers/peer0.kanavoogle.dsw.example/tls:/etc/hyperledger/fabric/tls:ro
+      - peer0-kanavoogle-data:/var/hyperledger/production
+    ports:
+      - "${FABRIC_BIND_IP:-127.0.0.1}:9051:7051"
+    depends_on: [orderer.dsw.example]
+    networks: [fabric]
+
+  # Each organisation runs its own copy of the chaincode, so neither depends
+  # on code the other controls. The package IDs are written to fabric/.env by
+  # network.sh when the chaincode is installed.
+  skillcoin-school:
+    build: ./chaincode/skillcoin
+    image: dsw/skillcoin-chaincode:1.0
+    restart: unless-stopped
+    hostname: skillcoin.school.dsw.example
+    environment:
+      CHAINCODE_SERVER_ADDRESS: 0.0.0.0:9999
+      CHAINCODE_ID: ${SKILLCOIN_SCHOOL_PACKAGE_ID:-}
+    networks:
+      fabric:
+        aliases: [skillcoin.school.dsw.example]
+
+  skillcoin-kanavoogle:
+    image: dsw/skillcoin-chaincode:1.0
+    restart: unless-stopped
+    hostname: skillcoin.kanavoogle.dsw.example
+    environment:
+      CHAINCODE_SERVER_ADDRESS: 0.0.0.0:9999
+      CHAINCODE_ID: ${SKILLCOIN_KANAVOOGLE_PACKAGE_ID:-}
+    depends_on: [skillcoin-school] # shares the image built above
+    networks:
+      fabric:
+        aliases: [skillcoin.kanavoogle.dsw.example]
+
+volumes:
+  orderer-data:
+  peer0-school-data:
+  peer0-kanavoogle-data:
+
+networks:
+  fabric:
+    name: dsw-fabric
