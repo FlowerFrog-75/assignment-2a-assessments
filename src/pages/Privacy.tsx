@@ -138,10 +138,12 @@ export default function Privacy({ setPage }: Props) {
                   <div className="text-sm font-medium text-gray-900 font-body">{t.name}</div>
                   <div className="text-xs text-gray-500 font-body">{t.classes.join(', ')}{t.consent ? ` · allowed since ${t.consent.grantedAt}` : ''}</div>
                 </div>
-                <label className="flex items-center gap-2 text-sm font-body cursor-pointer">
-                  <input type="checkbox" checked={Boolean(t.consent)} onChange={() => toggleConsent(t)} />
-                  {t.consent ? 'Allowed' : 'Not allowed'}
-                </label>
+                <div className="flex items-center gap-3">
+                  <Badge tone={t.consent ? 'green' : 'gray'}>{t.consent ? 'Allowed' : 'Not allowed'}</Badge>
+                  <Button variant={t.consent ? 'secondary' : 'primary'} accent="orange" className="!py-1.5 text-xs" onClick={() => toggleConsent(t)}>
+                    {t.consent ? 'Stop allowing' : 'Allow'}
+                  </Button>
+                </div>
               </div>
             ))}
           </div>

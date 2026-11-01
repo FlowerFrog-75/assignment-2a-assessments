@@ -44,7 +44,7 @@ healthRoutes.get("/health", async (_req, res) => {
  * against the blockchain: balances must match the ledger, every coin must be
  * on it, and each assessment result must still match its fingerprint there.
  */
-publicRoutes.get("/verify/:code", rateLimit("verify", 60, 10 * 60_000), async (req, res) => {
+publicRoutes.get("/verify/:code", rateLimit("verify", 300, 10 * 60_000), async (req, res) => {
   const link = await resolveVerificationToken(String(req.params.code));
   if (!link) {
     await appendAuditLog({

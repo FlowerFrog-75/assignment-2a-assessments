@@ -57,7 +57,9 @@ export default function TeacherClassResults({ setPage }: Props) {
   const [filterRange, setFilterRange] = useState('All');
   if (!results.ready) return <PageStatus error={results.error} onRetry={results.reload} />;
   const { header, completed, students, skillAverages, classProgress, classes } = results.data;
-  const classAvg = students.length ? Math.round(students.reduce((a, s) => a + s.avg, 0) / students.length) : 0;
+  // Students who haven't had a result released yet don't count towards averages.
+  const assessed = students.filter((s) => s.assessments > 0);
+  const classAvg = assessed.length ? Math.round(assessed.reduce((a, s) => a + s.avg, 0) / assessed.length) : 0;
   const chooseClass = (id: string) => {
     try { sessionStorage.setItem('dsw:class', id); } catch { /* ignore */ }
     setClassId(id);
@@ -130,8 +132,8 @@ export default function TeacherClassResults({ setPage }: Props) {
       <div className="grid grid-cols-4 gap-4 mb-6">
         {[
           { label: 'Class Average', value: `${classAvg}%`, icon: '📊', color: 'text-emerald-600', bg: 'bg-emerald-50' },
-          { label: 'Students Above 80%', value: String(students.filter(s => s.avg >= 80).length), icon: '🌟', color: 'text-purple-600', bg: 'bg-purple-50' },
-          { label: 'Students Needing Support', value: String(students.filter(s => s.avg < 65).length), icon: '🎯', color: 'text-orange-600', bg: 'bg-orange-50' },
+          { label: 'Students Above 80%', value: String(assessed.filter(s => s.avg >= 80).length), icon: '🌟', color: 'text-purple-600', bg: 'bg-purple-50' },
+          { label: 'Students Needing Support', value: String(assessed.filter(s => s.avg < 65).length), icon: '🎯', color: 'text-orange-600', bg: 'bg-orange-50' },
           { label: 'Assessments Completed', value: `${completed.done} / ${completed.expected}`, icon: '✅', color: 'text-blue-600', bg: 'bg-blue-50' },
         ].map((s) => (
           <div key={s.label} className="bg-white rounded-xl border border-[#E8EAF0] p-4 shadow-sm">
@@ -244,17 +246,21 @@ export default function TeacherClassResults({ setPage }: Props) {
                     </div>
                   </div>
                 </td>
-                {Object.values(s.skills).map((score, i) => (
+                {Object.values(s.skills as Record<string, number | null>).map((score, i) => (
                   <td key={i} className="px-3 py-3.5 text-center">
-                    <span className={`text-xs font-mono font-600 px-1.5 py-0.5 rounded ${getScoreColor(score)}`}>
-                      {score}
-                    </span>
+                    {score === null ? (
+                      <span className="text-xs font-mono text-gray-300" title="Not assessed yet">—</span>
+                    ) : (
+                      <span className={`text-xs font-mono font-600 px-1.5 py-0.5 rounded ${getScoreColor(score)}`}>{score}</span>
+                    )}
                   </td>
                 ))}
                 <td className="px-3 py-3.5 text-center">
-                  <span className={`text-sm font-display font-700 px-2 py-1 rounded-lg ${getScoreColor(s.avg)}`}>
-                    {s.avg}%
-                  </span>
+                  {s.assessments === 0 ? (
+                    <span className="text-xs text-gray-400 font-body">No results yet</span>
+                  ) : (
+                    <span className={`text-sm font-display font-700 px-2 py-1 rounded-lg ${getScoreColor(s.avg)}`}>{s.avg}%</span>
+                  )}
                 </td>
                 <td className="px-5 py-3.5">
                   <button

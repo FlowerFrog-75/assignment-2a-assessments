@@ -73,11 +73,13 @@ export function Button({ variant = 'primary', accent = 'purple', busy, children,
 
 export function Field({ label, hint, children, className = '' }: { label: string; hint?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <label className={`block ${className}`}>
-      <span className="block text-xs font-semibold text-gray-700 font-body mb-1.5">{label}</span>
-      {children}
+    <div className={className}>
+      <label className="block">
+        <span className="block text-xs font-semibold text-gray-700 font-body mb-1.5">{label}</span>
+        {children}
+      </label>
       {hint && <span className="block text-xs text-gray-400 font-body mt-1">{hint}</span>}
-    </label>
+    </div>
   );
 }
 

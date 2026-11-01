@@ -139,8 +139,8 @@ export default function ResultsInterface({ setPage }: Props) {
           <div className="flex-1 grid grid-cols-4 gap-6">
             {[
               { label: 'Your Score', value: `${totalScore}%`, color: 'text-gray-900', sub: 'Out of 100%' },
-              { label: 'Class Average', value: `${classAvg}%`, color: 'text-gray-600', sub: vsClass >= 0 ? `You're +${vsClass}% above` : `You're ${-vsClass}% below` },
-              { label: 'Grade', value: grade, color: 'text-orange-600', sub: 'Well done!' },
+              { label: 'Class Average', value: `${classAvg}%`, color: 'text-gray-600', sub: vsClass > 0 ? `You're ${vsClass}% above` : vsClass < 0 ? `You're ${-vsClass}% below` : 'Same as the class' },
+              { label: 'Grade', value: grade, color: 'text-orange-600', sub: grade === 'A' ? 'Outstanding' : grade === 'B' ? 'Well done' : grade === 'C' ? 'Sound' : 'Keep working at it' },
               { label: 'Time Taken', value: timeTaken, color: 'text-gray-700', sub: timeRemaining },
             ].map((m) => (
               <div key={m.label}>

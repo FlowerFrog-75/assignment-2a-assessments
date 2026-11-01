@@ -57,7 +57,8 @@ teacherRoutes.get("/classes/current/results", requireAuth(), requireRole("teache
       avg,
       trend: mine.length < 2 || Math.abs(latest - before) < 3 ? "flat" : latest > before ? "up" : "down",
       assessments: mine.length,
-      skills: Object.fromEntries(SKILLS.map((s) => [SKILL_TABLE_KEY[s.key], totals[s.key].percent])),
+      // null = not assessed yet (shown as a dash, not 0)
+      skills: Object.fromEntries(SKILLS.map((s) => [SKILL_TABLE_KEY[s.key], totals[s.key].assessed ? totals[s.key].percent : null])),
     };
   });
 

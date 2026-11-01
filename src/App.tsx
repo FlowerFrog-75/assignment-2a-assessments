@@ -32,9 +32,15 @@ function isVerifyLink() {
   return window.location.pathname.startsWith('/verify');
 }
 
+/** The page in the address bar, e.g. #/digital-wallet, so refresh and the back button work. */
+function pageFromHash(): Page | null {
+  const name = window.location.hash.replace(/^#\/?/, '');
+  return name in PAGES ? (name as Page) : null;
+}
+
 function Shell() {
   const { state } = useAuth();
-  const [page, setPageState] = useState<Page>('login');
+  const [page, setPageState] = useState<Page>(() => pageFromHash() ?? 'login');
   const [publicVerify, setPublicVerify] = useState(isVerifyLink);
 
   const setPage = (next: Page) => {
@@ -42,16 +48,34 @@ function Shell() {
       setPublicVerify(true);
       return;
     }
+    if (next !== 'login' && window.location.hash !== `#/${next}`) window.location.hash = `/${next}`;
     setPageState(next);
     window.scrollTo(0, 0);
   };
 
-  // After sign-in (or a role change), go to the role's home page.
+  // Back and forward buttons.
+  useEffect(() => {
+    const onHashChange = () => {
+      const next = pageFromHash();
+      if (next) setPageState(next);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  // After sign-in (or a role change), stay on the requested page if allowed, else go home.
   const role = state.status === 'signed-in' ? state.user.role : null;
   useEffect(() => {
     if (role) setPageState((current) => (canOpen(role, current) ? current : homePage(role)));
-    else setPageState('login');
-  }, [role]);
+    else setPageState((current) => (state.status === 'loading' ? current : 'login'));
+  }, [role, state.status]);
+
+  // Keep the address bar in step when the app redirects (e.g. to the home page).
+  useEffect(() => {
+    if (role && page !== 'login' && canOpen(role, page) && window.location.hash !== `#/${page}`) {
+      window.history.replaceState(null, '', `#/${page}`);
+    }
+  }, [role, page]);
 
   if (publicVerify) {
     return (

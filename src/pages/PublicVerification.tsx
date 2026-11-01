@@ -285,9 +285,9 @@ export default function PublicVerification({ setPage }: Props) {
             </div>
 
             <div className="border-t border-[#F0F2F7] pt-4 flex items-center justify-between text-xs text-gray-400 font-body">
-              <span>Verified by Digital Skills Wallet Platform · Northview Secondary School</span>
+              <span>Issued by {walletData.school} · Digital Skills Wallet</span>
               <span className="font-mono">
-                {ledger?.reachable ? `⛓ Hyperledger Fabric · ${ledger.transactions} transactions checked` : 'Hash: 0x9f2a...4c71'}
+                {ledger?.reachable ? `⛓ Hyperledger Fabric · ${ledger.transactions} transactions checked` : isPreviewMode() ? 'Hash: 0x9f2a...4c71' : 'Blockchain check unavailable right now'}
               </span>
             </div>
           </div>

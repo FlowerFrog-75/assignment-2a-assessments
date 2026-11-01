@@ -42,4 +42,6 @@ The repository also has a Node.js back end. **Nothing in `src/` may import from 
 - `mongodb/`: self-hosted MongoDB (Docker Compose). See `mongodb/README.md`.
 - `fabric/`: Hyperledger Fabric network and the `skillcoin` chaincode. See `fabric/README.md`.
 
-Screens load live data with `useApiData(path, mockData)` from `src/lib/api.ts`. The page's mock data is the fallback when the API isn't running, as in the Figma Make preview, so screens always render. When changing a wired screen, keep its mock data in the same shape as the API response. `vite.config.ts` proxies `/api` to the API server (`pnpm api`, port 4000).
+Users sign in (`src/lib/auth.tsx`); pages and who may open them are listed in `src/lib/pages.ts`, and the current page is kept in the URL hash (`#/digital-wallet`). Screens load data with `useApiData(path, sampleData)` from `src/lib/api.ts` and must render `<PageStatus>` from `src/components/ui.tsx` until `ready` is true. Changes go through `apiSend()`, which adds the CSRF header. Sample data is shown only in the development **design preview**, which the sign-in page offers when the API isn't running (as in the Figma Make preview); production builds never show it. When changing a screen, keep its sample data in the same shape as the API response. `vite.config.ts` proxies `/api` to the API server (`pnpm api`, port 4000).
+
+- `deploy/`: production Docker image, Compose file with Caddy (HTTPS) and backups. See `deploy/README.md`.

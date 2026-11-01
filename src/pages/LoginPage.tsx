@@ -166,7 +166,7 @@ export default function LoginPage({ setPage }: LoginPageProps) {
             )}
           </div>
 
-          <div className="mt-4">
+          <div className={`mt-4 ${step === 'code' ? 'hidden' : ''}`}>
             <button
               onClick={() => setPage('public-verification')}
               className="w-full bg-white border border-[#E8EAF0] rounded-xl px-4 py-3 text-sm text-gray-600 hover:border-purple-200 hover:text-purple-700 transition-all font-body"

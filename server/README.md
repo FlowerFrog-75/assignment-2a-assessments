@@ -6,13 +6,16 @@ that does, plus a small API the React screens in `src/` call.
 
 ```
 server/
-  index.ts      Express server: /api routes (and the built app in production)
-  api/          Routes, one file per area. Each returns the same shape as the
-                mock data in the matching src/pages screen
+  index.ts      Express server: security headers, /api routes, the built app in production,
+                and the background ledger retry loop
+  api/          Routes, one file per area (auth, admin, teaching, assessments, students,
+                teacher, public, ledger)
+  auth/         Sessions, role checks, rate limiting
+  assessment/   The assessment engine (seeded papers, marking) and coin/achievement issuing
   db/           MongoDB connection, constants and Mongoose models
   ledger/       Fabric Gateway client: skillcoin contract, MongoDB→ledger sync, block reader
-  security/     Password hashing (scrypt)
-  scripts/      Command-line tools: seed, indexes, ledger sync, customer demo
+  security/     Password hashing (scrypt), TOTP 2FA, encryption of 2FA secrets (AES-256-GCM)
+  scripts/      Command-line tools: create admin, starter questions, indexes, ledger sync and audit
 ```
 
 Nothing in `src/` may import from `server/`. This folder uses database
@@ -31,38 +34,69 @@ The API reads `.env.local` (then `.env`) from the project root. See
 `.env.example`. Server settings have no `VITE_` prefix, so Vite never exposes
 them to the browser.
 
+## Security
+
+- **Sign-in:** email + password (scrypt). Staff (teachers, admins) must also
+  use a TOTP authenticator app; their secrets are encrypted with a key derived
+  from `APP_SECRET`. New accounts and admin resets get a temporary password
+  that must be changed at first sign-in.
+- **Sessions:** a random token in an `HttpOnly`, `SameSite=Strict` cookie
+  (`Secure` in production); only its SHA-256 hash is stored (`sessions`
+  collection, expires after 12 hours). A new token is issued after the second
+  factor, and other sessions end on a password change, 2FA reset or deactivation.
+- **Brute force:** 5 wrong passwords or codes lock the account for 15 minutes;
+  per-account and generous per-IP rate limits (schools share one IP address).
+- **CSRF:** every non-GET request must carry `X-Requested-With: dsw`, which a
+  browser won't send cross-site without a CORS preflight this server never allows.
+- **Headers:** CSP, `X-Frame-Options: DENY`, `nosniff`, HSTS behind HTTPS,
+  `Cache-Control: no-store` on the API.
+- **Access rules:** every route checks the role. Teachers see only their
+  classes, and individual results only with the student's consent. Admins
+  can see everything (oversight). Every view of a student's data, and every
+  change, is written to the hash-chained audit log; students see entries about themselves.
+
 ## How the screens get their data
 
-Each screen calls `useApiData(path, mockData)` (`src/lib/api.ts`):
-
-- **API answers:** the screen shows live data and a green **Live data** badge.
-- **API not reachable** (not started, or the static Figma Make preview): the
-  screen shows its original mock data and a grey **Demo data · API offline**
-  badge. Nothing breaks.
-- **API refuses** (e.g. 403 when a student hasn't given consent): the screen
-  shows that message.
-
-Login isn't built yet. Student screens show the demo student
-(`DEMO_STUDENT_WALLET` in `src/lib/api.ts`, Jordan Smith) and teacher screens
-act as the demo teacher (`DEMO_TEACHER_EMAIL`, Ms Chen). Swap these for the
-signed-in user once authentication exists.
+Each screen calls `useApiData(path, sampleData)` (`src/lib/api.ts`) and shows
+a spinner, then the data, or a clear message (not signed in, no access, no
+results yet, server unreachable). Sample data is only shown in the
+development **design preview** (offered on the sign-in page when the API
+isn't running, e.g. in Figma Make). Production builds never show it.
 
 ## API routes
 
 All responses are JSON, errors included (`{ "error": "...", "message": "..." }`).
+Changes (POST/PUT/PATCH/DELETE) need the `X-Requested-With: dsw` header.
 
-| Route | Screen | Notes |
+| Area | Routes | Who |
 | --- | --- | --- |
-| `GET /api/health` | - | MongoDB and Fabric status. 503 if MongoDB is down |
-| `GET /api/students/:walletId/dashboard` | Student Dashboard | Skills, coins, active and completed assessments |
-| `GET /api/students/:walletId/wallet` | Skills Wallet | Includes how many coins are committed on the ledger |
-| `GET /api/students/:walletId/results/latest` | Results | The most recently released result |
-| `GET /api/students/:walletId/profile` | Individual Results | **403 `consent_required`** without the student's consent. Every attempt is audit-logged |
-| `GET /api/classes/current/results` | Class Results | The demo teacher's class |
-| `GET /api/templates` | Assessment Templates | |
-| `GET /api/audit-logs` | Access Logs | Includes a check of the hash chain |
-| `GET /api/verify/:code` | Public Verification | No login. Shows only the skills the student shared, checked against the ledger (balances, every coin present, evidence fingerprints). Audit-logged |
-| `GET /api/demo/ledger?wallet=` | Blockchain Ledger | Off in production unless `ENABLE_LEDGER_DEMO=true` |
+| Health | `GET /health` | anyone |
+| Sign-in | `POST /auth/login`, `POST /auth/2fa/verify`, `POST /auth/logout`, `GET /auth/me`, `POST /auth/password`, `POST /auth/2fa/setup`, `POST /auth/2fa/enable` | anyone / signed in |
+| Public verification | `GET /verify/:code` | anyone (rate-limited, audit-logged) |
+| Student | `GET /me/dashboard`, `/me/wallet`, `/me/results/latest?attempt=`, `/me/assessments`; `POST /me/assessments/:templateId/start`; `GET /me/attempts/:id`; `PUT /me/attempts/:id/responses`; `POST /me/attempts/:id/submit`; `GET/POST /me/consents`, `DELETE /me/consents/:id`; `GET/POST /me/verification-links`, `POST /me/verification-links/:id/revoke` | student (own data only) |
+| Results | `GET /classes/current/results?classId=`, `GET /students/:walletId/profile`, `POST /students/:walletId/notes` | teacher (own classes, with consent), admin |
+| Question bank | `GET /items`, `POST /items`, `PUT /items/:id`, `POST /items/:id/review`, `POST /items/:id/retire` | teacher, admin |
+| Templates | `GET /templates`, `GET/PUT /templates/:id`, `POST /templates`, `POST /templates/:id/status`, `POST /templates/:id/duplicate`, `PUT/DELETE /templates/:id/assignments/:classId` | teacher (own templates and classes), admin |
+| Marking | `GET /marking`, `GET/POST /marking/:id`, `POST /marking/release` | teacher (own classes), admin |
+| Audit log | `GET /audit-logs` | everyone, filtered by role |
+| Administration | `GET /admin/overview`; `GET/PUT /admin/school`; `GET/POST /admin/users`, `PATCH /admin/users/:id`, `POST /admin/users/:id/{reset-password,reset-2fa,unlock,sign-out}`; `GET/POST /admin/classes`, `PUT /admin/classes/:id`; `GET /admin/wallet-events`, `POST /admin/wallet-events/:id/revoke`, `POST /admin/ledger/sync` | admin |
+| Blockchain | `GET /ledger/overview?wallet=` | admin |
+
+## The assessment workflow
+
+1. Teachers add questions (or load the starter set) and **approve** them.
+   Only approved questions can be used.
+2. A template's **blueprint** says how many questions to draw per skill and
+   complexity. It can be published only if the question bank has enough.
+3. When a student starts, the engine draws their paper with a random **seed**
+   (mulberry32 + Fisher-Yates over approved items in a stable order), so the
+   paper can always be rebuilt. Answers autosave; the timer is enforced on the
+   server, which submits automatically when time runs out.
+4. Multiple-choice answers are marked automatically; teachers mark written
+   answers against the model answer and marking guide.
+5. On **release**, the student sees the result, earns 10 skill coins per
+   mark in each skill plus any achievements, and the coins are written to
+   Fabric in the background (with the result's fingerprint).
 
 Using the data layer from new routes:
 
@@ -70,10 +104,10 @@ Using the data layer from new routes:
 import { UserModel, skillSummary, walletBalances, hasConsent } from "../db";
 import { getLedgerWallet } from "../ledger";
 
-const jordan = await UserModel.findOne({ walletId: "DSW-2024-JS-1147" });
-const profile = await skillSummary({ student: jordan!._id }); // [{ skill, percent, ... }]
-const coins = await walletBalances(jordan!._id);              // [{ skill, coins }]
-const onChain = await getLedgerWallet(jordan!.walletId!);     // balances and entries on the ledger
+const student = await UserModel.findOne({ walletId: "KGSC-2026-AW-8398" });
+const profile = await skillSummary({ student: student!._id }); // [{ skill, percent, ... }]
+const coins = await walletBalances(student!._id);              // [{ skill, coins }]
+const onChain = await getLedgerWallet(student!.walletId!);     // balances and entries on the ledger
 ```
 
 ## Database collections (`db/`)
@@ -86,6 +120,8 @@ validates against that list.
 | Collection | Model | What it holds | Rules enforced |
 | --- | --- | --- | --- |
 | `users` | `UserModel` | Students, teachers and admins; 2FA settings; public keys | Unique email and wallet ID. `passwordHash` and the 2FA secret are never returned unless explicitly selected, and are always removed from JSON |
+| `school` | `SchoolModel` | The school's name, year, term and wallet ID prefix (set in School Settings) | One document |
+| `sessions` | `SessionModel` | Signed-in sessions (SHA-256 of the cookie token), with IP and browser | TTL index removes expired sessions |
 | `classes` | `ClassGroupModel` | Teaching groups (subject, year, term, teachers, students) | At least one teacher |
 | `assessmenttemplates` | `AssessmentTemplateModel` | Teacher-defined, subject-linked assessments with a **blueprint** (how many items of each skill and complexity to draw) and class assignments with due dates | Blueprint skills must be template skills. A published template needs a blueprint. Text index for search |
 | `assessmentitems` | `AssessmentItemModel` | The item bank: questions tagged by subject, skill and complexity (1–5). Can be teacher-written or AI-drafted (with the AI's own validation result) | **Only an educator can approve an item** (`review.reviewedBy` is required). Answer keys are hidden from queries by default. Multiple-choice answers must match an option |
@@ -128,6 +164,6 @@ validates against that list.
   items for a template's blueprint using only approved items and that seed,
   so the same seed always produces the same paper.
 - **Scoring by complexity.** Each served question records its complexity and
-  `maxPoints`. The demo data uses points = complexity.
+  `maxPoints`.
 - **Indexes** are built automatically in development. In production run
   `pnpm db:indexes` on deploy.

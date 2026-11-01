@@ -2,8 +2,8 @@
 
 The Digital Skills Wallet keeps its application data in a **MongoDB Community
 server that you run yourself**: on a laptop for development, or on any Linux
-server (university VM, VPS or on-premises machine) for the demo and
-production. It does not use a hosted service such as MongoDB Atlas.
+server (school data centre, VM or on-premises machine) in
+production (see [`deploy/README.md`](../deploy/README.md)). It does not use a hosted service such as MongoDB Atlas.
 
 There are two ways to run it:
 
@@ -38,8 +38,8 @@ cp .env.example .env.local
 # 3. Start MongoDB (waits until it reports healthy)
 pnpm db:up
 
-# 4. Optional: load demo data that matches the UI prototype
-pnpm db:seed
+# 4. Create the first administrator (prints a temporary password)
+pnpm admin:create --email you@school.edu.au --first Your --last Name
 
 # 5. Run the API server and the app together, and check the connection
 pnpm dev:full
@@ -140,7 +140,8 @@ Backups on a native install:
 | `pnpm db:down` | Stop MongoDB. Data is kept in the `mongo-data` volume |
 | `pnpm db:logs` | Follow the server logs |
 | `pnpm db:shell` | Open `mongosh` as the app user |
-| `pnpm db:seed` | Load demo data into an empty database (`pnpm db:seed --reset` wipes it first) |
+| `pnpm admin:create` | Create an administrator account (`--reset-password` for a locked-out admin) |
+| `pnpm db:starter-items` | Load the 28-question starter bank (teachers approve them in the app) |
 | `pnpm db:indexes` | Create or refresh indexes to match the schemas |
 | `pnpm db:backup` | Write a gzipped backup to `mongodb/backups/` |
 

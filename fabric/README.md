@@ -22,7 +22,7 @@ flowchart LR
 
 | Organisation | MSP ID | Runs | Can |
 | --- | --- | --- | --- |
-| Northview Secondary School | `SchoolMSP` | peer + chaincode | Issue and revoke coins, read |
+| The school | `SchoolMSP` | peer + chaincode | Issue and revoke coins, read |
 | Kanavoogle | `KanavoogleMSP` | peer + chaincode | Co-endorse every transaction, read and verify |
 | Ordering service | `OrdererMSP` | orderer | Order transactions into blocks (can't create or alter them) |
 
@@ -38,60 +38,64 @@ Requires Docker, Node.js 22 and pnpm. The first run downloads about 1.5 GB of Fa
 
 ```bash
 pnpm install
-pnpm db:up && pnpm db:seed   # MongoDB with demo data (see mongodb/README.md)
+pnpm db:up                   # MongoDB (see mongodb/README.md)
 pnpm fabric:up               # build the network: certificates, channel, chaincode (~1 min the first time)
-pnpm ledger:sync             # write the demo skill coins from MongoDB to the ledger
-pnpm dev:full                # API server + app; open the app and choose "Blockchain Ledger" in the sidebar
+pnpm dev:full                # API server + app
 ```
 
-`pnpm ledger:demo` runs a narrated walkthrough in the terminal.
+You don't need to sync anything by hand: when a teacher releases results,
+the app writes the skill coins to the ledger in the background, and retries
+every 5 minutes if the network was down. `pnpm ledger:sync` does it on demand.
 
 ---
 
 ## Showing it to the customer
 
-**Before the meeting** (about 5 minutes):
-
-```bash
-pnpm db:up && pnpm db:seed --reset    # note the verification codes it prints
-pnpm fabric:clean && pnpm fabric:up   # fresh ledger, so it matches the fresh seed
-pnpm ledger:sync
-pnpm dev:full
-```
-
-Open the app (the address Vite prints, e.g. <http://localhost:8443>), sign
-in, and have a terminal ready. Every screen shows a green **Live data**
-badge when it's reading from MongoDB and the blockchain.
+Use a test installation with a few real test accounts (see the main README):
+an admin, a teacher and two students in one class, with one assessment
+sat, marked and released.
 
 **Talk track:**
 
-1. **Blockchain Ledger → "Who keeps the ledger".** Two organisations each
-   keep a full copy. A coin only exists if both run the smart contract, agree
-   and sign. Neither can change history alone, not even the school.
-2. **Jordan's wallet** (section 2). This is read live from the blockchain.
-   Point out the 🔒 note: the ledger holds only the wallet ID, never names
-   or emails. Every skill matches the school's records.
-3. **Evidence check** (section 3). When coins are issued, a fingerprint of
-   the assessment result goes on the ledger. Every row shows ✓ Genuine.
-4. **Live tamper.** In the terminal, run `pnpm ledger:demo tamper`. This
-   changes Jordan's Science result to 100% directly in the database, as an
-   attacker or an insider might. Re-open the Blockchain Ledger screen: that
-   row now shows ✗ **Changed after recording**.
-5. **Public Verification** (as an employer would). Enter Jordan's code from
-   the seed output. While the tamper is active it says **Credential Could
-   Not Be Verified**: an assessment result was changed after it was
-   recorded. Run `pnpm ledger:demo restore`, verify again, and it shows ✅
-   **Credential Verified**, with only the 4 skills Jordan chose to share.
-6. **The chain** (Blockchain Ledger, section 5). Each block carries the
-   fingerprint of the one before it. Every coin transaction is endorsed by
-   SchoolMSP + KanavoogleMSP.
-7. **Privacy** (Class Results → Drill-down on Ethan Clarke). Ethan hasn't
-   given consent, so his individual results are refused, and **Access Logs**
-   shows the blocked attempt, with the log's own tamper check passing.
-8. **Attacks** (terminal): `pnpm ledger:demo --pause` steps through
-   Kanavoogle trying to mint 500 coins (refused: "Access denied") and the
-   school trying to issue the same coins twice (refused). Press Enter
-   between steps.
+1. **Blockchain Ledger → "Who keeps the ledger"** (admin). Two organisations
+   each keep a full copy. A coin only exists if both run the smart contract,
+   agree and sign. Neither can change history alone, not even the school.
+2. **A student's wallet** (section 2), read live from the blockchain. The
+   ledger holds only the wallet ID, never names or emails. Every skill
+   matches the school's records.
+3. **Evidence check** (section 3). When coins are issued, a SHA-256
+   fingerprint of the assessment result goes on the ledger. Every row shows
+   ✓ Genuine.
+4. **Release a result live.** As the teacher, release a marked result
+   (Marking & Release). Open **Skill Coins** as admin: within seconds the new
+   coins show the block they were written to.
+5. **Public Verification** (as an employer would). As the student, create a
+   link in **Sharing & Privacy** and open it in a private window. It checks
+   the ledger live and shows only the skills the student chose to share.
+6. **Revocation.** As admin, revoke some coins (Skill Coins → Revoke, with a
+   reason). The ledger keeps the original issue and adds a revocation: nothing
+   is ever deleted. The student sees the reason in their access log.
+7. **Privacy.** As the teacher, open a student who hasn't given consent: the
+   individual results are refused, and the attempt appears in both the
+   teacher's and the student's access logs. The audit log's own hash chain
+   check passes.
+8. **Audit from the command line:** `pnpm ledger:verify --probe` checks every
+   wallet against the database and shows Kanavoogle being refused when it
+   tries to mint coins.
+
+**Showing tamper detection** (test installation only, never on real
+records): note a released result's score, change it directly in the
+database, and show that the Blockchain Ledger screen, the student's
+verification link and `pnpm ledger:verify` all report the change. Then put
+the original score back.
+
+```bash
+pnpm db:shell
+> db.assessmentattempts.findOne({ status: "released" }, { "result.percent": 1 })   // note _id and percent
+> db.assessmentattempts.updateOne({ _id: ObjectId("...") }, { $set: { "result.percent": 100 } })
+> // ...show it, then restore:
+> db.assessmentattempts.updateOne({ _id: ObjectId("...") }, { $set: { "result.percent": <original> } })
+```
 
 **Likely questions:**
 
@@ -140,7 +144,7 @@ to the Docker socket.
 
 The app code is in [`server/ledger`](../server/ledger). It covers the gateway
 connection, contract calls, sync and a block reader (`explorer.ts`). The block
-reader recalculates block hashes, so the demo page can show that the chain
+reader recalculates block hashes, so the Blockchain Ledger screen can show that the chain
 links up.
 
 ### Commands
@@ -151,8 +155,8 @@ links up.
 | `pnpm fabric:down` | Stop the network. The ledger is kept |
 | `pnpm fabric:status` | Containers, block height, chaincode definition |
 | `pnpm fabric:clean` | **Delete** the network, ledger and certificates. Afterwards run `pnpm ledger:sync --resync` |
-| `pnpm ledger:sync` | Send pending coins from MongoDB to the ledger |
-| `pnpm ledger:demo` | Narrated walkthrough (`--pause`, `tamper`, `restore`) |
+| `pnpm ledger:sync` | Send pending coins from MongoDB to the ledger now (the app also does this automatically) |
+| `pnpm ledger:verify` | Read-only audit: ledger balances and evidence fingerprints vs the database (`--probe`: also show Kanavoogle can't issue) |
 
 ### Files
 
@@ -173,7 +177,7 @@ links up.
 | `FABRIC_KANAVOOGLE_PEER_ENDPOINT` | `localhost:9051` |
 | `FABRIC_ORGANIZATIONS_DIR` | `fabric/organizations` |
 | `FABRIC_CHANNEL` / `FABRIC_CHAINCODE` | `skillschannel` / `skillcoin` |
-| `ENABLE_LEDGER_DEMO` | Set to `true` to serve the Blockchain Ledger screen's data (`/api/demo/ledger`) when `NODE_ENV=production` (it is off in production by default, as it has no login) |
+| `LEDGER_RETRY_MS` / `LEDGER_SYNC` | How often unsynced coins are retried (default 5 minutes) / `off` to sync only with `pnpm ledger:sync` |
 
 ---
 
@@ -184,8 +188,9 @@ ports are bound to `127.0.0.1` by default, so only the app on the same
 machine can reach them. Set `FABRIC_BIND_IP` to change that, and
 firewall the ports.
 
-This network is built for development and demonstration. A production
-deployment would differ in these ways:
+For a single school this setup is ready to use as it is (see
+[`deploy/README.md`](../deploy/README.md)). As the network grows to more
+schools and partners, it should change in these ways:
 
 - **Each organisation runs its own nodes on its own infrastructure.** Here
   both run on one machine for convenience.
@@ -205,8 +210,8 @@ deployment would differ in these ways:
 | --- | --- |
 | `Found a partly created network` | A previous `up` stopped halfway. Run `pnpm fabric:clean`, then `pnpm fabric:up` |
 | Blockchain Ledger screen: "certificates not found" | The network has never been started on this machine. Run `pnpm fabric:up` |
-| Coins show "Not on ledger yet" | Run `pnpm ledger:sync` |
-| Ledger balances are double the school's after reseeding | `db:seed --reset` reuses the same wallet IDs, but the ledger still has the old seed's coins (by design, nothing is ever deleted from it). Start a fresh ledger: `pnpm fabric:clean && pnpm fabric:up && pnpm ledger:sync` |
+| Coins show "Waiting" or "Failed" | Check `pnpm fabric:status`, then Admin → Skill Coins → **Retry blockchain sync** (or `pnpm ledger:sync`) |
+| Ledger balances don't match after wiping the database | The ledger keeps every coin ever issued (by design). On a test install, start a fresh ledger too: `pnpm fabric:clean && pnpm fabric:up` |
 | Everything says "already on the ledger" after `fabric:clean` | MongoDB still has the old status. Run `pnpm ledger:sync --resync` |
 | Port 7051 or 9051 is in use | Stop the other program, or change the host port mappings in `docker-compose.yaml` and set `FABRIC_*_PEER_ENDPOINT` |
 | Windows | Run the commands in WSL2 or Git Bash, with Docker Desktop |

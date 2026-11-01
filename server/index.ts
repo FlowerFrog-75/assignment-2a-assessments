@@ -9,6 +9,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import express from "express";
 import { connectToDatabase } from "./db/connect";
+import { allModels } from "./db/models";
 import { apiErrorHandler, apiRouter } from "./api/router";
 import { startLedgerRetryLoop } from "./assessment/coins";
 import { assertSecretsConfigured } from "./security/secrets";
@@ -58,10 +59,25 @@ if (existsSync(path.join(dist, "index.html"))) {
   app.get("/{*path}", (_req, res) => res.sendFile(path.join(dist, "index.html")));
 }
 
-app.listen(port, () => {
+app.listen(port, (error?: Error) => {
+  if (error) {
+    console.error(`Could not start on port ${port}: ${error.message}`);
+    process.exit(1);
+  }
   console.log(`API listening on http://localhost:${port}/api`);
   connectToDatabase().then(
-    () => console.log("Connected to MongoDB"),
+    async () => {
+      console.log("Connected to MongoDB");
+      // Production doesn't auto-build indexes on every query; create any that
+      // are missing (unique indexes enforce rules such as one account per email).
+      // `pnpm db:indexes` also removes stale ones.
+      if (process.env.NODE_ENV === "production") {
+        await Promise.all(allModels.map((model) => model.createIndexes())).then(
+          () => console.log("Indexes checked"),
+          (error: Error) => console.error("Index creation failed:", error.message),
+        );
+      }
+    },
     (error: Error) => console.warn(`MongoDB not reachable yet (${error.message}). The API will answer 503 until it is.`),
   );
   startLedgerRetryLoop();

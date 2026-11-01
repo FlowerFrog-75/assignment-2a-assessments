@@ -9,6 +9,7 @@ import {
   UserModel,
   WalletEventModel,
   connectToDatabase,
+  currentSchool,
   walletBalances,
   type SkillKey,
 } from "../db";
@@ -154,13 +155,14 @@ export const ledgerRoutes = Router();
  */
 ledgerRoutes.get("/ledger/overview", requireAuth(), requireRole("admin"), async (req, res) => {
   const wallet = typeof req.query.wallet === "string" ? req.query.wallet : undefined;
-  const data = await loadLedgerOverview(wallet);
+  const [data, school] = await Promise.all([loadLedgerOverview(wallet), currentSchool()]);
   res.json({
     ...data,
     network: {
       channel: ledgerChannel(),
       chaincode: ledgerChaincode(),
-      organisations: Object.values(LEDGER_ORGS).map((org) => ({ id: org.mspId, name: org.name, role: org.role })),
+      // The school's display name comes from School Settings; its blockchain identity is SchoolMSP.
+      organisations: Object.values(LEDGER_ORGS).map((org) => ({ id: org.mspId, name: org.mspId === "SchoolMSP" ? (school?.name ?? org.name) : org.name, role: org.role })),
       endorsementPolicy: "AND('SchoolMSP.peer', 'KanavoogleMSP.peer')",
     },
   });

@@ -57,7 +57,13 @@ export function checkPasswordStrength(password: unknown): string {
 const dummyHash = hashPassword("not-a-real-password-just-for-timing");
 
 /** POST /api/auth/login { email, password } */
-authRoutes.post("/auth/login", rateLimit("login", 20, 10 * 60_000), async (req, res) => {
+const loginEmail = (req: Request) => String(req.body?.email ?? "").trim().toLowerCase();
+
+authRoutes.post(
+  "/auth/login",
+  rateLimit("login-ip", 600, 10 * 60_000), // a whole school can share one IP address
+  rateLimit("login-account", 15, 10 * 60_000, loginEmail),
+  async (req, res) => {
   const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
   const password = typeof req.body?.password === "string" ? req.body.password : "";
   const user = email ? await UserModel.findOne({ email }).select("+passwordHash") : null;
@@ -95,10 +101,11 @@ authRoutes.post("/auth/login", rateLimit("login", 20, 10 * 60_000), async (req, 
     await audit(req, user, "auth.login", "success");
   }
   res.json({ twoFactorRequired: needsCode, user: needsCode ? null : publicUser(user) });
-});
+  },
+);
 
 /** POST /api/auth/2fa/verify { code }: second step of sign-in. */
-authRoutes.post("/auth/2fa/verify", rateLimit("2fa", 20, 10 * 60_000), async (req, res) => {
+authRoutes.post("/auth/2fa/verify", rateLimit("2fa", 600, 10 * 60_000), async (req, res) => {
   const auth = req.auth;
   if (!auth?.session.pendingTwoFactor) throw new ApiError(400, "no_pending_login", "Sign in with your password first");
   const user = await UserModel.findById(auth.user._id).select("+twoFactor.secret +twoFactor.lastUsedStep");
@@ -170,7 +177,7 @@ authRoutes.post("/auth/2fa/setup", requireAuth({ allowSetup: true }), async (req
 });
 
 /** POST /api/auth/2fa/enable { code }: confirms the new secret. */
-authRoutes.post("/auth/2fa/enable", requireAuth({ allowSetup: true }), rateLimit("2fa-enable", 20, 10 * 60_000), async (req, res) => {
+authRoutes.post("/auth/2fa/enable", requireAuth({ allowSetup: true }), rateLimit("2fa-enable", 600, 10 * 60_000), async (req, res) => {
   const user = await UserModel.findById(currentUser(req)._id).select("+twoFactor.pendingSecret");
   if (!user?.twoFactor?.pendingSecret) throw new ApiError(400, "no_pending_setup", "Start 2FA setup first");
   const pending = decryptSecret(user.twoFactor.pendingSecret);
