@@ -1,7 +1,7 @@
 // API server for the Digital Skills Wallet. It connects the React app (src/)
 // to MongoDB and the Hyperledger Fabric ledger, which browsers can't reach directly.
 //
-//   pnpm server     # development: API on http://localhost:4000 (Vite proxies /api to it)
+//   pnpm api        # development: API on http://localhost:4000 (Vite proxies /api to it)
 //   pnpm dev:full   # API + Vite together
 //   pnpm start      # production: also serves the built app from dist/ (run `pnpm build` first)
 import "./scripts/load-env";

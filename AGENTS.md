@@ -42,4 +42,4 @@ The repository also has a Node.js back end. **Nothing in `src/` may import from 
 - `mongodb/`: self-hosted MongoDB (Docker Compose). See `mongodb/README.md`.
 - `fabric/`: Hyperledger Fabric network and the `skillcoin` chaincode. See `fabric/README.md`.
 
-Screens load live data with `useApiData(path, mockData)` from `src/lib/api.ts`. The page's mock data is the fallback when the API isn't running, as in the Figma Make preview, so screens always render. When changing a wired screen, keep its mock data in the same shape as the API response. `vite.config.ts` proxies `/api` to the API server (`pnpm server`, port 4000).
+Screens load live data with `useApiData(path, mockData)` from `src/lib/api.ts`. The page's mock data is the fallback when the API isn't running, as in the Figma Make preview, so screens always render. When changing a wired screen, keep its mock data in the same shape as the API response. `vite.config.ts` proxies `/api` to the API server (`pnpm api`, port 4000).

@@ -62,7 +62,7 @@ fabric/     Hyperledger Fabric network and the skillcoin smart contract. See fab
 | --- | --- |
 | `pnpm dev` / `build` / `preview` | Front end only (Vite), as set up by Figma Make |
 | `pnpm dev:full` | API server + front end together |
-| `pnpm server` | API server only (restarts on changes) |
+| `pnpm api` | API server only (restarts on changes) |
 | `pnpm start` | Production: serves the built app and the API from one process (`pnpm build` first) |
 | `pnpm typecheck` | Type-check the front end and the server |
 | `pnpm db:up` / `db:down` / `db:seed` / `db:indexes` / `db:shell` / `db:logs` / `db:backup` | MongoDB |

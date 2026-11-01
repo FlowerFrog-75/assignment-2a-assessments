@@ -22,7 +22,7 @@ passwords and the organisation's private signing key.
 
 ```bash
 pnpm dev:full   # API (http://localhost:4000) + Vite together; Vite proxies /api to the API
-pnpm server     # API only, restarts on file changes
+pnpm api        # API only, restarts on file changes
 pnpm build && NODE_ENV=production pnpm start   # production: one process serves the app and the API
 pnpm typecheck  # browser app and server
 ```
