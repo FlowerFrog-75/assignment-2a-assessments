@@ -13,9 +13,18 @@
     "db:shell": "docker compose -f mongodb/docker-compose.yml exec mongodb sh -c 'mongosh -u \"$MONGO_APP_USERNAME\" -p \"$MONGO_APP_PASSWORD\" --authenticationDatabase \"$MONGO_APP_DB\" \"$MONGO_APP_DB\"'",
     "db:indexes": "tsx scripts/db-indexes.ts",
     "db:seed": "tsx scripts/db-seed.ts",
-    "db:backup": "bash mongodb/backup.sh"
+    "db:backup": "bash mongodb/backup.sh",
+    "fabric:up": "bash fabric/network.sh up",
+    "fabric:down": "bash fabric/network.sh down",
+    "fabric:status": "bash fabric/network.sh status",
+    "fabric:clean": "bash fabric/network.sh clean",
+    "ledger:sync": "tsx scripts/ledger-sync.ts",
+    "ledger:demo": "tsx scripts/ledger-demo.ts"
   },
   "dependencies": {
+    "@grpc/grpc-js": "^1.14.7",
+    "@hyperledger/fabric-gateway": "^1.13.0",
+    "@hyperledger/fabric-protos": "^0.2.2",
     "mongoose": "^9.11.4",
     "next": "16.3.5",
     "react": "19.2.8",

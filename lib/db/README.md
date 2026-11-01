@@ -65,9 +65,10 @@ validates against that list.
 - **MongoDB is the application database, not the verification ledger.** The
   project plan chose Hyperledger Fabric for coin records because MongoDB is
   "not suitable as the immutable verification layer". `walletevents` is the
-  app's copy of each coin event: it holds `ledger.status` (`pending` →
-  `committed`) and the Fabric `txId`, and the UI should only show a coin as
-  verified once it is committed.
+  app's copy of each coin event. `npm run ledger:sync` writes it to Fabric
+  and records `ledger.status` (`pending` → `committed`), the `txId` and the
+  `blockNumber`. The UI should only show a coin as verified once it is
+  committed. See [`fabric/README.md`](../../fabric/README.md).
 - **Append-only collections** (`walletevents`, `auditlogs`) reject deletes,
   replacements and edits through Mongoose (see `plugins/append-only.ts`).
   That guards against bugs in app code. It is not a security boundary,

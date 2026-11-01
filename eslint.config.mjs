@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Chaincode and generated network files (the chaincode has its own build).
+    "fabric/**",
   ]),
 ]);
 

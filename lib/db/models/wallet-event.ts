@@ -33,6 +33,7 @@ const walletEventSchema = new Schema(
     ledger: {
       status: { type: String, enum: LEDGER_STATUSES, default: "pending" },
       txId: { type: String, trim: true },
+      blockNumber: { type: Number, min: 0 },
       committedAt: { type: Date },
       error: { type: String, maxlength: 2_000 },
     },

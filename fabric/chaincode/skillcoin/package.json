@@ -1,0 +1,22 @@
+{
+  "name": "skillcoin-chaincode",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Skill coin chaincode for the Digital Skills Wallet (Hyperledger Fabric 2.5)",
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "fabric-chaincode-node server --chaincode-address=$CHAINCODE_SERVER_ADDRESS --chaincode-id=$CHAINCODE_ID"
+  },
+  "dependencies": {
+    "fabric-contract-api": "2.5.8",
+    "fabric-shim": "2.5.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5"
+  }
+}

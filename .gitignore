@@ -45,3 +45,11 @@ next-env.d.ts
 
 # MongoDB backups made by mongodb/backup.sh
 /mongodb/backups/
+
+# Hyperledger Fabric: generated certificates/keys, channel artifacts, chaincode packages
+/fabric/organizations/
+/fabric/channel-artifacts/
+/fabric/packages/
+/fabric/.demo/
+/fabric/chaincode/skillcoin/node_modules/
+/fabric/chaincode/skillcoin/dist/
