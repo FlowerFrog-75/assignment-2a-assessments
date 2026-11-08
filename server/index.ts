@@ -13,6 +13,7 @@ import { allModels } from "./db/models";
 import { apiErrorHandler, apiRouter } from "./api/router";
 import { startLedgerRetryLoop } from "./assessment/coins";
 import { assertSecretsConfigured } from "./security/secrets";
+import { announceSetupCodeIfNeeded } from "./api/signup";
 
 assertSecretsConfigured(); // fail fast in production if APP_SECRET is missing
 
@@ -68,6 +69,7 @@ app.listen(port, (error?: Error) => {
   connectToDatabase().then(
     async () => {
       console.log("Connected to MongoDB");
+      await announceSetupCodeIfNeeded().catch(() => undefined);
       // Production doesn't auto-build indexes on every query; create any that
       // are missing (unique indexes enforce rules such as one account per email).
       // `pnpm db:indexes` also removes stale ones.

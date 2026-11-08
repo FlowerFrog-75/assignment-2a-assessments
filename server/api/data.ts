@@ -74,8 +74,11 @@ export async function templateLookup(ids: Types.ObjectId[]) {
   return new Map(templates.map((t) => [t._id.toString(), t]));
 }
 
-/** Average skill percentage across a group of students (each student counts once). */
-export async function groupSkillAverages(studentIds: (Types.ObjectId | string)[]): Promise<Record<SkillKey, number>> {
+/**
+ * Average skill percentage across a group of students (each student counts
+ * once). null when no student in the group has been assessed in that skill.
+ */
+export async function groupSkillAverages(studentIds: (Types.ObjectId | string)[]): Promise<Record<SkillKey, number | null>> {
   const attempts = await AssessmentAttemptModel.find({ student: { $in: studentIds }, status: "released" });
   const byStudent = new Map<string, AssessmentAttemptDocument[]>();
   for (const attempt of attempts) {
@@ -86,7 +89,7 @@ export async function groupSkillAverages(studentIds: (Types.ObjectId | string)[]
   return Object.fromEntries(
     SKILL_KEYS.map((key) => {
       const values = perStudent.filter((t) => t[key].assessed).map((t) => t[key].percent);
-      return [key, values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0];
+      return [key, values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : null];
     }),
-  ) as Record<SkillKey, number>;
+  ) as Record<SkillKey, number | null>;
 }

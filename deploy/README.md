@@ -81,23 +81,37 @@ Caddy gets the HTTPS certificate on first start (it needs ports 80 and 443
 reachable from the internet). The health check should report
 `"status":"ok"` with MongoDB and Fabric both `ok`.
 
-## 6. Create the first administrator
+## 6. Set up the school and the first administrator
+
+While there is no administrator, the app prints a one-time **setup code** in
+its log:
 
 ```bash
-docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec app \
-  node_modules/.bin/tsx server/scripts/create-admin.ts --email it@yourschool.edu.au --first Sam --last Lee
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env logs app | grep -A1 "setup code"
 ```
 
-It prints a temporary password. Sign in at your domain: you'll choose a new
-password and set up two-factor authentication with an authenticator app.
+Open your domain in a browser. It shows **Set up your school**: enter the
+setup code, the school's name and your own details. You're signed in as the
+first administrator and asked to set up two-factor authentication. Only
+someone who can read the server's log can do this, and it works once.
+
+(Prefer the command line? `create-admin.ts --email ... --first ... --last ...`
+in the app container does the same and prints a temporary password.)
 
 Everything else happens in the web app, under **Administration**:
 
-1. **School Settings**: name, year, term, wallet ID prefix.
-2. **Users**: create teachers and students, one at a time or by pasting from a
-   spreadsheet. Each new account gets a temporary password (shown once) to
-   hand out privately.
-3. **Classes**: create classes, choose the teacher(s), enrol students.
+1. **School Settings**: name, year, term, wallet ID prefix, and the **staff
+   sign-up code**.
+2. **People**, either way:
+   - **They sign up themselves.** Turn on the staff code and give it to
+     teachers; each class has a **class code** (shown to its teachers on Class
+     Results) that students use to sign up and join that class, or a share
+     link like `https://your-domain/join/K7Q2-M9XD`. Codes can be turned off
+     or replaced at any time.
+   - **You create them.** **Users** → create accounts one at a time or paste a
+     list from a spreadsheet. Each gets a temporary password (shown once).
+3. **Classes**: create classes and choose their teachers (students who sign up
+   with a class code are enrolled automatically).
 
 Teachers then use **Question Bank** (approve questions), **Assessment
 Templates** (build and assign an assessment) and **Marking & Release**.

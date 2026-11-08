@@ -16,6 +16,9 @@ const schoolSchema = new Schema(
     term: { type: Number, min: 1, max: 4 },
     /** Prefix for new wallet IDs, e.g. "DSW" gives DSW-2026-JS-4821. */
     walletPrefix: { type: String, default: "DSW", uppercase: true, trim: true, match: /^[A-Z]{2,6}$/ },
+    /** Staff sign-up code (encrypted with server/security/secrets.ts). Anyone with it can create a teacher account. */
+    staffCode: { type: String, select: false },
+    staffCodeEnabled: { type: Boolean, default: false },
   },
   { timestamps: true, collection: "school" },
 );

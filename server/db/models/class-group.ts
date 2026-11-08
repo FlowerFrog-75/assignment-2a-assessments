@@ -15,12 +15,16 @@ const classGroupSchema = new Schema(
     },
     students: { type: [{ type: Schema.Types.ObjectId, ref: "User" }], default: [] },
     archived: { type: Boolean, default: false },
+    /** Students sign up (or join) with this code, e.g. "K7Q2M9XD". Shown to the class's teachers. */
+    joinCode: { type: String, trim: true, uppercase: true, maxlength: 16 },
+    joinEnabled: { type: Boolean, default: false },
   },
   { timestamps: true, collection: "classes" },
 );
 
 classGroupSchema.index({ teachers: 1, archived: 1 });
 classGroupSchema.index({ students: 1, archived: 1 });
+classGroupSchema.index({ joinCode: 1 }, { unique: true, partialFilterExpression: { joinCode: { $type: "string" } } });
 
 export type ClassGroup = InferSchemaType<typeof classGroupSchema>;
 export type ClassGroupDocument = HydratedDocumentFromSchema<typeof classGroupSchema>;

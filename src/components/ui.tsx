@@ -27,7 +27,7 @@ export function PageHeader({ eyebrow, title, subtitle, accent = 'purple', action
 }
 
 export function Card({ children, className = '', padded = true }: { children: ReactNode; className?: string; padded?: boolean }) {
-  return <div className={`bg-white rounded-2xl border border-[#E8EAF0] shadow-sm ${padded ? 'p-6' : ''} ${className}`}>{children}</div>;
+  return <div className={`bg-white rounded-xl border border-[#E8EAF0] shadow-sm ${padded ? 'p-6' : ''} ${className}`}>{children}</div>;
 }
 
 export function Stat({ label, value, hint, tone = 'gray' }: { label: string; value: ReactNode; hint?: ReactNode; tone?: 'gray' | 'amber' | 'red' | 'emerald' | 'purple' | 'blue' }) {

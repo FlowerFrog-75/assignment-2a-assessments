@@ -1,6 +1,6 @@
 // Administrators: school settings, user accounts, classes, and oversight of
 // skill coins and the blockchain.
-import { randomBytes, randomInt } from "node:crypto";
+import { randomInt } from "node:crypto";
 import { Router, type Request } from "express";
 import { Types } from "mongoose";
 import { USER_ROLES, skillLabel, type SkillKey, type UserRole } from "../db/constants";
@@ -21,6 +21,7 @@ import { currentUser, endAllSessions, requireAuth, requireRole } from "../auth/s
 import { hashPassword } from "../security/password";
 import { syncLedgerSoon } from "../assessment/coins";
 import { ApiError } from "./data";
+import { formatCode, newWalletId, staffCodeInfo } from "./signup";
 import { formatDate, formatTimestamp } from "./format";
 
 export const adminRoutes = Router();
@@ -71,17 +72,6 @@ function temporaryPassword(): string {
   return `${word()}-${word()}-${randomInt(1000, 10000)}-${word()}`;
 }
 
-async function newWalletId(firstName: string, lastName: string): Promise<string> {
-  const school = await currentSchool();
-  const prefix = school?.walletPrefix ?? "DSW";
-  const year = school?.academicYear ?? new Date().getFullYear();
-  const letters = `${firstName[0] ?? "X"}${lastName[0] ?? "X"}`.toUpperCase().replace(/[^A-Z]/g, "X");
-  for (let i = 0; i < 20; i++) {
-    const id = `${prefix}-${year}-${letters}-${randomInt(1000, 10000)}`;
-    if (!(await UserModel.exists({ walletId: id }))) return id;
-  }
-  return `${prefix}-${year}-${letters}-${randomBytes(3).toString("hex").toUpperCase()}`;
-}
 
 function userRow(u: UserDocument | (Record<string, any> & { _id: Types.ObjectId })) {
   return {
@@ -146,6 +136,7 @@ adminRoutes.get("/admin/school", ...admin, async (_req, res) => {
           walletPrefix: school.walletPrefix ?? "DSW",
         }
       : null,
+    ...(await staffCodeInfo()),
   });
 });
 
@@ -334,6 +325,8 @@ adminRoutes.get("/admin/classes", ...admin, async (req, res) => {
       academicYear: c.academicYear,
       term: c.term ?? null,
       archived: Boolean(c.archived),
+      joinCode: c.joinCode ? formatCode(c.joinCode) : null,
+      joinEnabled: Boolean(c.joinEnabled),
       teachers: c.teachers.map(person),
       students: c.students.map(person),
     })),

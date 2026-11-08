@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar } from 'recharts';
 import type { Page } from '../types';
 import DataSourceBadge from '../components/DataSourceBadge';
 import { selectResult, selectedResult, useApiData } from '../lib/api';
 import { PageStatus } from '../components/ui';
+import { ChartCard, CompareLegend, comparisonFinding, levelOf, SkillBullets, skillFinding, type BulletRow } from '../components/charts';
 
 interface Props { setPage: (p: Page) => void; }
 
@@ -46,12 +46,6 @@ const mockResult = {
   feedback: 'Strong analysis of the data. Next time, explain why the sample size matters.',
 };
 
-const levelColor: Record<string, string> = {
-  Advanced: 'bg-purple-100 text-purple-700',
-  Proficient: 'bg-emerald-100 text-emerald-700',
-  Developing: 'bg-orange-100 text-orange-700',
-  Beginning: 'bg-red-100 text-red-700',
-};
 
 export default function ResultsInterface({ setPage }: Props) {
   const [chosen, setChosen] = useState(selectedResult());
@@ -67,8 +61,15 @@ export default function ResultsInterface({ setPage }: Props) {
   }
   const { attempts, attemptId, feedback, title, subtitle, totalScore, classAvg, grade, timeTaken, timeRemaining, coinsEarned, skillResults, questionBreakdown } = result.data;
   const vsClass = totalScore - classAvg;
-  const strengths = skillResults.filter(s => s.score >= 80);
-  const gaps = skillResults.filter(s => s.score < 75);
+  const hasClass = ('classCount' in result.data ? (result.data as { classCount: number }).classCount : 2) > 1;
+  type SkillResult = (typeof skillResults)[number] & { name?: string; classAvg?: number | null; points?: string };
+  const named = (skillResults as SkillResult[]).map((s) => ({ ...s, name: s.name ?? s.skill }));
+  const bulletRows: BulletRow[] = named.map((s) => ({ key: s.skill, name: s.name, score: s.score, compare: hasClass ? s.classAvg ?? null : undefined, detail: s.points ? `${s.points} marks` : undefined }));
+  const strengths = named.filter((s) => s.score >= 75).sort((a, b) => b.score - a.score);
+  const gaps = named.filter((s) => s.score < 50).sort((a, b) => a.score - b.score);
+  const earned = questionBreakdown.reduce((t, q) => t + q.score, 0);
+  const possible = questionBreakdown.reduce((t, q) => t + q.max, 0);
+  const fullMarks = questionBreakdown.filter((q) => q.score >= q.max).length;
 
   return (
     <div className="min-h-screen bg-[#F8F9FC] p-6">
@@ -89,7 +90,7 @@ export default function ResultsInterface({ setPage }: Props) {
               aria-label="Choose a result"
               value={attemptId}
               onChange={(e) => { selectResult(e.target.value); setChosen(e.target.value); }}
-              className="px-3 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-sm font-body text-gray-700 max-w-[260px]"
+              className="px-3 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-sm font-body text-gray-700 max-w-[340px]"
             >
               {attempts.map((a) => <option key={a.id} value={a.id}>{a.title} · {a.date}</option>)}
             </select>
@@ -107,154 +108,114 @@ export default function ResultsInterface({ setPage }: Props) {
         </div>
       </div>
 
-      {feedback && (
-        <div className="bg-orange-50 border border-orange-100 rounded-2xl px-6 py-4 mb-6">
-          <div className="text-xs font-mono font-600 text-orange-600 uppercase tracking-widest mb-1">Teacher feedback</div>
-          <p className="text-sm text-orange-900 font-body whitespace-pre-wrap">{feedback}</p>
-        </div>
-      )}
 
-      {/* Score hero */}
-      <div className="bg-white rounded-2xl border border-[#E8EAF0] shadow-sm p-6 mb-6">
-        <div className="flex items-center gap-10">
-          {/* Score circle */}
-          <div className="relative w-28 h-28 flex-shrink-0">
+      {/* Headline numbers */}
+      <div className="bg-white rounded-xl border border-[#E8EAF0] shadow-sm p-6 mb-5">
+        <div className="flex flex-wrap items-center gap-x-10 gap-y-6">
+          <div className="relative w-28 h-28 flex-shrink-0" role="img" aria-label={`Score ${totalScore}%, ${levelOf(totalScore)}`}>
             <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
               <circle cx="50" cy="50" r="42" fill="none" stroke="#F0F2F7" strokeWidth="8" />
-              <circle
-                cx="50" cy="50" r="42" fill="none"
-                stroke={totalScore >= 80 ? '#10B981' : totalScore >= 70 ? '#F97316' : '#EF4444'}
-                strokeWidth="8"
-                strokeLinecap="round"
-                strokeDasharray={`${(totalScore / 100) * 264} 264`}
-              />
+              <circle cx="50" cy="50" r="42" fill="none" stroke="#7c3aed" strokeWidth="8" strokeLinecap="round" strokeDasharray={`${(totalScore / 100) * 264} 264`} />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="font-display font-800 text-2xl text-gray-900">{totalScore}%</span>
-              <span className="text-[9px] text-gray-400 font-body uppercase tracking-wider">Score</span>
+              <span className="font-display font-700 text-2xl text-gray-900">{totalScore}%</span>
+              <span className="text-[10px] text-gray-500 font-body">{levelOf(totalScore)}</span>
             </div>
           </div>
-
-          {/* Score details */}
-          <div className="flex-1 grid grid-cols-4 gap-6">
+          <dl className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-6">
             {[
-              { label: 'Your Score', value: `${totalScore}%`, color: 'text-gray-900', sub: 'Out of 100%' },
-              { label: 'Class Average', value: `${classAvg}%`, color: 'text-gray-600', sub: vsClass > 0 ? `You're ${vsClass}% above` : vsClass < 0 ? `You're ${-vsClass}% below` : 'Same as the class' },
-              { label: 'Grade', value: grade, color: 'text-orange-600', sub: grade === 'A' ? 'Outstanding' : grade === 'B' ? 'Well done' : grade === 'C' ? 'Sound' : 'Keep working at it' },
-              { label: 'Time Taken', value: timeTaken, color: 'text-gray-700', sub: timeRemaining },
+              { label: 'Grade', value: grade, sub: grade === 'A' ? 'Outstanding' : grade === 'B' ? 'Well done' : grade === 'C' ? 'Sound' : 'Keep working at it' },
+              hasClass
+                ? { label: 'Class average', value: `${classAvg}%`, sub: vsClass > 0 ? `You’re ${vsClass} points above` : vsClass < 0 ? `You’re ${-vsClass} points below` : 'Same as the class' }
+                : { label: 'Class average', value: '—', sub: 'Shown once more of your class have results' },
+              { label: 'Skill coins earned', value: `+${coinsEarned}`, sub: '10 coins per mark' },
+              { label: 'Time taken', value: timeTaken, sub: timeRemaining },
             ].map((m) => (
               <div key={m.label}>
-                <div className="text-xs text-gray-400 font-body mb-1">{m.label}</div>
-                <div className={`font-display font-700 text-2xl ${m.color}`}>{m.value}</div>
-                <div className="text-xs text-gray-400 font-body mt-0.5">{m.sub}</div>
+                <dt className="text-xs text-gray-500 font-body mb-1">{m.label}</dt>
+                <dd className="font-display font-700 text-2xl text-gray-900">{m.value}</dd>
+                <dd className="text-xs text-gray-500 font-body mt-0.5">{m.sub}</dd>
               </div>
             ))}
-          </div>
+          </dl>
         </div>
       </div>
 
       <div className="grid grid-cols-3 gap-5">
-        {/* Skill breakdown */}
-        <div className="col-span-2 bg-white rounded-xl border border-[#E8EAF0] shadow-sm p-5">
-          <h2 className="font-display font-600 text-gray-900 mb-1">Skill Breakdown</h2>
-          <p className="text-xs text-gray-400 font-body mb-4">Performance across 7 core competencies</p>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={skillResults} barSize={32}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#F0F2F7" />
-              <XAxis dataKey="skill" tick={{ fontSize: 11, fill: '#9CA3AF', fontFamily: 'Inter' }} axisLine={false} tickLine={false} />
-              <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: '#9CA3AF', fontFamily: 'Inter' }} axisLine={false} tickLine={false} />
-              <Tooltip
-                formatter={(v) => [`${v}%`, 'Score']}
-                contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E8EAF0', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}
-              />
-              <Bar dataKey="score" fill="#F97316" radius={[4, 4, 0, 0]}
-                label={{ position: 'top', fontSize: 11, fill: '#9CA3AF', fontFamily: 'Inter', formatter: (v: unknown) => `${v}%` }}
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <ChartCard
+          className="col-span-2"
+          title={(hasClass && comparisonFinding(bulletRows)) || skillFinding(bulletRows)}
+          subtitle={hasClass ? 'Each skill in this assessment, compared with your class on the same assessment.' : 'Each skill in this assessment. Bands show the level.'}
+          legend={hasClass ? <CompareLegend you="You" /> : undefined}
+        >
+          <SkillBullets rows={bulletRows} compareLabel="Class average" />
+        </ChartCard>
 
-        {/* Radar */}
-        <div className="bg-white rounded-xl border border-[#E8EAF0] shadow-sm p-5">
-          <h2 className="font-display font-600 text-gray-900 mb-1">Skills Radar</h2>
-          <p className="text-xs text-gray-400 font-body mb-4">Competency profile</p>
-          <ResponsiveContainer width="100%" height={220}>
-            <RadarChart data={skillResults}>
-              <PolarGrid stroke="#F0F2F7" />
-              <PolarAngleAxis dataKey="skill" tick={{ fontSize: 9, fill: '#9CA3AF', fontFamily: 'Inter' }} />
-              <Radar dataKey="score" stroke="#F97316" fill="#F97316" fillOpacity={0.15} strokeWidth={2} dot={{ fill: '#F97316', r: 3 }} />
-            </RadarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Question breakdown */}
-        <div className="col-span-2 bg-white rounded-xl border border-[#E8EAF0] shadow-sm p-5">
-          <h2 className="font-display font-600 text-gray-900 mb-4">Question Performance</h2>
-          <div className="flex flex-col gap-2">
-            {questionBreakdown.map((q) => (
-              <div key={q.q} className="flex items-center gap-3">
-                <span className="w-6 text-xs font-mono text-gray-400">{q.q}</span>
-                <div className="flex-1 bg-gray-100 rounded-full h-2">
-                  <div
-                    className={`h-2 rounded-full ${q.score / q.max >= 0.8 ? 'bg-emerald-500' : q.score / q.max >= 0.6 ? 'bg-orange-500' : 'bg-red-400'}`}
-                    style={{ width: `${(q.score / q.max) * 100}%` }}
-                  ></div>
-                </div>
-                <span className="text-xs font-mono text-gray-600 w-10 text-right">{q.score}/{q.max}</span>
+        <div className="flex flex-col gap-5">
+          <ChartCard title="What this means">
+            <div className="space-y-4 text-sm font-body">
+              <div>
+                <div className="text-xs font-semibold text-gray-500 mb-1.5">Strengths</div>
+                {strengths.length ? (
+                  <ul className="space-y-1">{strengths.map((s) => <li key={s.skill} className="flex justify-between gap-2"><span className="text-gray-800">{s.name}</span><span className="text-gray-500 tabular-nums">{s.score}% · {levelOf(s.score)}</span></li>)}</ul>
+                ) : (
+                  <p className="text-gray-400">None at Proficient (75%+) yet.</p>
+                )}
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Strengths & Gaps */}
-        <div className="flex flex-col gap-4">
-          {/* Strengths */}
-          <div className="bg-white rounded-xl border border-[#E8EAF0] shadow-sm p-5">
-            <h2 className="font-display font-600 text-gray-900 mb-3 flex items-center gap-2">
-              <span className="text-emerald-500">💪</span> Strengths
-            </h2>
-            <div className="flex flex-col gap-2">
-              {strengths.map((s) => (
-                <div key={s.skill} className="flex items-center justify-between">
-                  <span className="text-sm font-body text-gray-700">{s.skill}</span>
-                  <div className="flex items-center gap-2">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-body ${levelColor[s.level]}`}>{s.level}</span>
-                    <span className="text-sm font-display font-700 text-gray-900 w-10 text-right">{s.score}%</span>
-                  </div>
-                </div>
-              ))}
+              <div>
+                <div className="text-xs font-semibold text-gray-500 mb-1.5">Focus next on</div>
+                {gaps.length ? (
+                  <ul className="space-y-1">{gaps.map((s) => <li key={s.skill} className="flex justify-between gap-2"><span className="text-gray-800">{s.name}</span><span className="text-gray-500 tabular-nums">{s.score}% · {levelOf(s.score)}</span></li>)}</ul>
+                ) : (
+                  <p className="text-gray-400">Nothing below Developing. Nice work.</p>
+                )}
+              </div>
             </div>
-          </div>
-
-          {/* Gaps */}
-          <div className="bg-white rounded-xl border border-[#E8EAF0] shadow-sm p-5">
-            <h2 className="font-display font-600 text-gray-900 mb-3 flex items-center gap-2">
-              <span className="text-orange-500">🎯</span> Focus Areas
-            </h2>
-            <div className="flex flex-col gap-2">
-              {gaps.map((s) => (
-                <div key={s.skill} className="flex items-center justify-between">
-                  <span className="text-sm font-body text-gray-700">{s.skill}</span>
-                  <div className="flex items-center gap-2">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-body ${levelColor[s.level]}`}>{s.level}</span>
-                    <span className="text-sm font-display font-700 text-gray-900 w-10 text-right">{s.score}%</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
+          </ChartCard>
           <button
             onClick={() => setPage('digital-wallet')}
-            className="bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-xl p-4 text-sm font-semibold font-body flex items-center gap-3 hover:shadow-md transition-all active:scale-95"
+            className="bg-orange-500 hover:bg-orange-600 text-white rounded-xl p-4 text-sm font-semibold font-body flex items-center gap-3 transition-colors"
           >
-            <span className="text-2xl">💎</span>
-            <div className="text-left">
-              <div className="font-display font-700">+{coinsEarned} Skill Coins</div>
-              <div className="text-orange-100 text-xs font-body">Earned from this assessment</div>
-            </div>
+            <span className="text-2xl" aria-hidden="true">💎</span>
+            <span className="text-left">
+              <span className="block font-display font-700">+{coinsEarned} skill coins</span>
+              <span className="block text-orange-100 text-xs font-body">Added to your wallet · view it</span>
+            </span>
           </button>
         </div>
+
+        <ChartCard
+          className="col-span-2"
+          title={`${earned} of ${possible} marks · ${fullMarks} of ${questionBreakdown.length} questions fully correct`}
+          subtitle="Each question, in the order you answered them."
+        >
+          <ul className="flex flex-col gap-1.5 font-body">
+            {questionBreakdown.map((q) => {
+              const full = q.score >= q.max;
+              const none = q.score === 0;
+              return (
+                <li key={q.q} className="grid items-center gap-3" style={{ gridTemplateColumns: '2.25rem minmax(7rem, 10rem) 1fr 4.5rem' }}>
+                  <span className="text-xs font-semibold text-gray-500 tabular-nums">{q.q}</span>
+                  <span className="text-xs text-gray-600 truncate">{'skill' in q ? (q as { skill: string }).skill : ''}</span>
+                  <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden" aria-hidden="true">
+                    <div className="h-full rounded-r bg-[#7c3aed]" style={{ width: `${(q.score / q.max) * 100}%` }} />
+                  </div>
+                  <span className="text-xs tabular-nums text-right text-gray-700 whitespace-nowrap">
+                    {q.score}/{q.max} <span aria-label={full ? 'correct' : none ? 'incorrect' : 'partly correct'}>{full ? '✓' : none ? '✗' : '◐'}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </ChartCard>
+
+        {feedback ? (
+          <ChartCard title="Teacher feedback">
+            <p className="text-sm text-gray-700 font-body whitespace-pre-wrap leading-relaxed">{feedback}</p>
+          </ChartCard>
+        ) : (
+          <div />
+        )}
       </div>
     </div>
   );

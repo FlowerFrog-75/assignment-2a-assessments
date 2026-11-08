@@ -35,9 +35,9 @@ export default function AdminOverview({ setPage }: Props) {
 
   const steps = [
     { done: d.school.configured, label: 'Enter your school details', page: 'admin-school' as Page },
-    { done: d.users.teachers > 0, label: 'Create teacher accounts', page: 'admin-users' as Page },
-    { done: d.users.students > 0, label: 'Create student accounts (one at a time or from a spreadsheet)', page: 'admin-users' as Page },
-    { done: d.classes > 0, label: 'Set up classes and enrol students', page: 'admin-classes' as Page },
+    { done: d.users.teachers > 0, label: 'Add teachers: create their accounts, or turn on the staff sign-up code in School Settings', page: 'admin-users' as Page },
+    { done: d.classes > 0, label: 'Set up classes and choose their teachers', page: 'admin-classes' as Page },
+    { done: d.users.students > 0, label: 'Add students: import a list, or turn on a class code so they can sign up and join', page: 'admin-classes' as Page },
     { done: d.publishedTemplates > 0, label: 'Teachers approve questions and publish an assessment', page: 'item-bank' as Page },
   ];
   const setupDone = steps.every((s) => s.done);

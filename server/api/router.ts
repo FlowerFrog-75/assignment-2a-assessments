@@ -4,6 +4,7 @@ import { loadSession } from "../auth/session";
 import { adminRoutes } from "./admin";
 import { assessmentRoutes } from "./assessments";
 import { authRoutes } from "./auth";
+import { signupRoutes } from "./signup";
 import { ApiError } from "./data";
 import { ledgerRoutes } from "./ledger";
 import { healthRoutes, publicRoutes } from "./public";
@@ -40,6 +41,7 @@ apiRouter.use(requireAppHeader);
 apiRouter.use(loadSession);
 
 apiRouter.use(authRoutes);
+apiRouter.use(signupRoutes);
 apiRouter.use(publicRoutes);
 apiRouter.use(studentRoutes);
 apiRouter.use(teacherRoutes);

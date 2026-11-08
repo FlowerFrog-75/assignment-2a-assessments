@@ -3,6 +3,7 @@ import type { Page } from '../types';
 import { apiSend, ApiRequestError, useApiData } from '../lib/api';
 import { Alert, Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, PageStatus, Select } from '../components/ui';
 import type { UserRow } from './AdminUsers';
+import JoinCode from '../components/JoinCode';
 
 interface Props { setPage: (p: Page) => void; }
 
@@ -15,12 +16,14 @@ interface ClassRow {
   academicYear: number;
   term: number | null;
   archived: boolean;
+  joinCode: string | null;
+  joinEnabled: boolean;
   teachers: Person[];
   students: Person[];
 }
 
 const sample: { classes: ClassRow[] } = {
-  classes: [{ id: '1', name: '11B', subject: 'Science', yearLevel: 11, academicYear: 2026, term: 4, archived: false, teachers: [{ id: 't', name: 'Sarah Chen', walletId: null }], students: [{ id: 's', name: 'Jordan Smith', walletId: 'DSW-2024-JS-1147' }] }],
+  classes: [{ id: '1', name: '11B', subject: 'Science', yearLevel: 11, academicYear: 2026, term: 4, archived: false, joinCode: 'K7Q2-M9XD', joinEnabled: true, teachers: [{ id: 't', name: 'Sarah Chen', walletId: null }], students: [{ id: 's', name: 'Jordan Smith', walletId: 'DSW-2024-JS-1147' }] }],
 };
 
 function PeoplePicker({ people, selected, onChange, placeholder }: { people: UserRow[]; selected: Set<string>; onChange: (next: Set<string>) => void; placeholder: string }) {
@@ -172,7 +175,8 @@ export default function AdminClasses(_: Props) {
                 {c.archived && <Badge>Archived</Badge>}
               </div>
               <div className="text-sm font-body text-gray-600 mb-1"><span className="text-gray-400">Teacher{c.teachers.length === 1 ? '' : 's'}:</span> {c.teachers.map((t) => t.name).join(', ')}</div>
-              <div className="text-sm font-body text-gray-600 mb-4"><span className="text-gray-400">Students:</span> {c.students.length}</div>
+              <div className="text-sm font-body text-gray-600 mb-3"><span className="text-gray-400">Students:</span> {c.students.length}</div>
+              {!c.archived && <div className="mb-4 -mx-1"><JoinCode classId={c.id} code={c.joinCode} enabled={c.joinEnabled} compact /></div>}
               <Button variant="secondary" onClick={() => setEditing(c)} disabled={!users.ready}>Edit & enrol</Button>
             </Card>
           ))}

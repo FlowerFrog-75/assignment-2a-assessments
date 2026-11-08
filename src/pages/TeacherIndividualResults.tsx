@@ -1,9 +1,9 @@
-import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import type { Page } from '../types';
 import DataSourceBadge from '../components/DataSourceBadge';
 import { useState } from 'react';
 import { apiSend, ApiRequestError, isPreviewMode, selectedStudent, useApiData } from '../lib/api';
 import { PageStatus } from '../components/ui';
+import { ChartCard, CompareLegend, comparisonFinding, HeatCell, levelOf, SkillBullets, skillFinding, TrendChart, type BulletRow } from '../components/charts';
 
 interface Props { setPage: (p: Page) => void; }
 
@@ -73,8 +73,18 @@ export default function TeacherIndividualResults({ setPage }: Props) {
     }
   };
   const firstName = student.name.split(' ')[0];
-  const radarData = student.skills.map(s => ({ skill: s.short, student: s.score, classAvg: s.classAvg }));
-  const compareData = student.skills.map(s => ({ skill: s.short, student: s.score, class: s.classAvg }));
+  type SkillRow = (typeof student.skills)[number] & { assessed?: boolean };
+  const bulletRows: BulletRow[] = (student.skills as SkillRow[]).map((s) => ({
+    key: s.name,
+    name: s.name,
+    score: s.assessed === false ? null : s.score,
+    compare: (s.classAvg as number | null) ?? null,
+  }));
+  const trend = student.assessments
+    .filter((a) => a.status === 'Graded')
+    .slice()
+    .reverse()
+    .map((a) => ({ label: a.date, value: a.score, detail: a.title }));
 
   // The API refuses (403) when the student hasn't consented. The attempt is still audit-logged.
   if (profile.error) {
@@ -98,11 +108,6 @@ export default function TeacherIndividualResults({ setPage }: Props) {
       </div>
     );
   }
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return 'text-emerald-700 bg-emerald-50';
-    if (score >= 65) return 'text-orange-700 bg-orange-50';
-    return 'text-red-700 bg-red-50';
-  };
 
   return (
     <div className="min-h-screen bg-[#F8F9FC] p-6">
@@ -143,7 +148,7 @@ export default function TeacherIndividualResults({ setPage }: Props) {
         </div>
         <div className="flex-1 grid grid-cols-5 gap-6">
           {[
-            { label: 'Overall Score', value: `${student.overall}%`, color: 'text-emerald-700' },
+            { label: `Overall · ${levelOf(student.overall)}`, value: `${student.overall}%`, color: 'text-gray-900' },
             { label: 'Assessments', value: student.assessments.length, color: 'text-gray-900' },
             { label: 'Completed', value: student.assessments.filter(a => a.status === 'Graded').length, color: 'text-gray-900' },
             { label: 'Top Skill', value: student.topSkill, color: 'text-purple-700' },
@@ -174,11 +179,9 @@ export default function TeacherIndividualResults({ setPage }: Props) {
                     </div>
                     <div className="flex flex-col items-end gap-1">
                       {a.status === 'Graded' ? (
-                        <span className={`text-sm font-display font-700 px-2 py-0.5 rounded-lg ${getScoreColor(a.score)}`}>
-                          {a.score}%
-                        </span>
+                        <HeatCell value={a.score} label={a.title} />
                       ) : (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 font-body">In Progress</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-body whitespace-nowrap">{a.status}</span>
                       )}
                     </div>
                   </div>
@@ -219,69 +222,18 @@ export default function TeacherIndividualResults({ setPage }: Props) {
           </div>
         </div>
 
-        {/* Right: Charts */}
+        {/* Right: analysis */}
         <div className="col-span-2 flex flex-col gap-5">
-          {/* Radar comparison */}
-          <div className="bg-white rounded-xl border border-[#E8EAF0] shadow-sm p-5">
-            <h2 className="font-display font-600 text-gray-900 mb-1">Student vs. Class Average</h2>
-            <p className="text-xs text-gray-400 font-body mb-4">Skill profile comparison</p>
-            <div className="grid grid-cols-2 gap-6">
-              <ResponsiveContainer width="100%" height={220}>
-                <RadarChart data={radarData}>
-                  <PolarGrid stroke="#F0F2F7" />
-                  <PolarAngleAxis dataKey="skill" tick={{ fontSize: 10, fill: '#9CA3AF', fontFamily: 'Inter' }} />
-                  <Radar name={firstName} dataKey="student" stroke="#F97316" fill="#F97316" fillOpacity={0.2} strokeWidth={2} dot={{ fill: '#F97316', r: 3 }} />
-                  <Radar name="Class Avg" dataKey="classAvg" stroke="#10B981" fill="#10B981" fillOpacity={0.1} strokeWidth={1.5} strokeDasharray="4 2" />
-                  <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E8EAF0' }} />
-                </RadarChart>
-              </ResponsiveContainer>
-
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={compareData} barSize={14} barGap={2}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#F0F2F7" />
-                  <XAxis dataKey="skill" tick={{ fontSize: 9, fill: '#9CA3AF', fontFamily: 'Inter' }} axisLine={false} tickLine={false} />
-                  <YAxis domain={[0, 100]} tick={{ fontSize: 9, fill: '#9CA3AF', fontFamily: 'Inter' }} axisLine={false} tickLine={false} />
-                  <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E8EAF0' }} formatter={(v, n) => [`${v}%`, n === 'student' ? firstName : 'Class Avg']} />
-                  <Bar dataKey="student" fill="#F97316" radius={[3, 3, 0, 0]} name="student" />
-                  <Bar dataKey="class" fill="#10B981" radius={[3, 3, 0, 0]} name="class" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="flex items-center gap-6 mt-3 text-xs font-body text-gray-400">
-              <div className="flex items-center gap-1.5"><div className="w-3 h-2 rounded bg-orange-400"></div> {student.name}</div>
-              <div className="flex items-center gap-1.5"><div className="w-3 h-2 rounded bg-emerald-500"></div> Class Average</div>
-            </div>
-          </div>
-
-          {/* Skill detail table */}
-          <div className="bg-white rounded-xl border border-[#E8EAF0] shadow-sm p-5">
-            <h2 className="font-display font-600 text-gray-900 mb-4">Detailed Skill Analysis</h2>
-            <div className="flex flex-col gap-3">
-              {student.skills.map((s) => {
-                const diff = s.score - s.classAvg;
-                return (
-                  <div key={s.name} className="flex items-center gap-4">
-                    <div className="w-36 text-xs font-body text-gray-700 flex-shrink-0">{s.name}</div>
-                    <div className="flex-1 flex items-center gap-2">
-                      <div className="flex-1 bg-gray-100 rounded-full h-2 relative">
-                        <div className="h-2 rounded-full bg-orange-500 transition-all" style={{ width: `${s.score}%` }}></div>
-                        <div className="absolute top-0 h-2 w-0.5 bg-emerald-500" style={{ left: `${s.classAvg}%` }}></div>
-                      </div>
-                      <span className="font-mono text-xs text-gray-600 w-8 text-right">{s.score}%</span>
-                    </div>
-                    <span className={`text-xs font-mono font-600 w-12 text-right ${diff >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                      {diff >= 0 ? '+' : ''}{diff}
-                    </span>
-                    <div className="flex gap-0.5 flex-shrink-0">
-                      {Array.from({ length: 5 }).map((_, i) => (
-                        <div key={i} className={`w-2 h-2 rounded-sm ${i < s.level ? 'bg-orange-500' : 'bg-gray-100'}`}></div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <ChartCard
+            title={comparisonFinding(bulletRows, `${firstName} is above`) ?? skillFinding(bulletRows)}
+            subtitle="Each skill across all released results. The tick is the class average for the same skill."
+            legend={<CompareLegend you={firstName} />}
+          >
+            <SkillBullets rows={bulletRows} compareLabel="Class average" />
+          </ChartCard>
+          <ChartCard title="Results over time" subtitle="Overall score on each released assessment">
+            <TrendChart points={trend} height={200} emptyText="A trend appears after two released results." />
+          </ChartCard>
         </div>
       </div>
     </div>

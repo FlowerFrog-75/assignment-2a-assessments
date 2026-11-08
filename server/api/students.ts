@@ -98,9 +98,11 @@ studentRoutes.get("/me/dashboard", requireAuth(), requireRole("student"), async 
       badges: await AchievementModel.countDocuments({ student: student._id }),
     },
     skills: SKILLS.map((skill) => ({
+      key: skill.key,
       name: skill.label,
       short: SKILL_SHORT[skill.key],
       score: totals[skill.key].percent,
+      assessed: totals[skill.key].assessed,
       coins: coins.get(skill.key) ?? 0,
       trend: signed(trends[skill.key]),
     })),
@@ -153,6 +155,7 @@ studentRoutes.get("/me/wallet", requireAuth(), requireRole("student"), async (re
       level: totals[skill.key].assessed ? skillLevel(totals[skill.key].percent) : 0,
       maxLevel: 5,
       progress: totals[skill.key].percent,
+      assessed: totals[skill.key].assessed,
     })),
     achievements: achievements.map((a) => ({
       id: a._id.toString(),
@@ -191,17 +194,26 @@ studentRoutes.get("/me/results/latest", requireAuth(), requireRole("student"), a
     attempts: history.map((a) => ({ id: a._id.toString(), title: historyTemplates.get(a.template.toString())?.title ?? "Assessment", date: formatDate(a.releasedAt) })),
     attemptId: attempt._id.toString(),
     feedback: attempt.result.feedback ?? "",
-    timeTaken: `${minutes} min`,
+    timeTaken: minutes < 1 ? "Under 1 min" : `${minutes} min`,
     timeRemaining: `${Math.max(0, (template?.durationMinutes ?? minutes) - minutes)} min remaining`,
     coinsEarned: attempt.result.coinsAwarded,
-    skillResults: attempt.result.skillScores.map((s) => ({
-      skill: SKILL_SHORT[s.skill],
-      score: s.percent,
-      max: 100,
-      level: levelLabel(s.percent),
-    })),
+    skillResults: attempt.result.skillScores.map((s) => {
+      const others = classmates.flatMap((a) => a.result?.skillScores.filter((x) => x.skill === s.skill) ?? []);
+      return {
+        key: s.skill,
+        skill: SKILL_SHORT[s.skill],
+        name: SKILLS.find((k) => k.key === s.skill)?.label ?? s.skill,
+        score: s.percent,
+        points: `${s.score}/${s.maxScore}`,
+        max: 100,
+        level: levelLabel(s.percent),
+        classAvg: others.length > 1 ? average(others.map((x) => x.percent)) : null,
+      };
+    }),
+    classCount: classmates.length,
     questionBreakdown: attempt.questions.map((q, i) => ({
       q: `Q${i + 1}`,
+      skill: SKILLS.find((k) => k.key === q.skill)?.label ?? q.skill,
       score: attempt.responses.find((r) => r.item.equals(q.item))?.pointsAwarded ?? 0,
       max: q.maxPoints,
     })),
@@ -270,12 +282,13 @@ studentRoutes.get("/students/:walletId/profile", requireAuth(), requireRole("tea
         subject: templates.get(a.template.toString())?.subject ?? "",
         date: formatShortDate(a.releasedAt ?? a.startedAt),
         score: a.result?.percent ?? 0,
-        status: a.status === "released" ? "Graded" : "In Progress",
+        status: a.status === "released" ? "Graded" : a.status === "in_progress" ? "In Progress" : "Awaiting release",
       })),
       skills: SKILLS.map((skill) => ({
         name: skill.label,
         short: SKILL_SHORT[skill.key],
         score: totals[skill.key].percent,
+        assessed: totals[skill.key].assessed,
         level: totals[skill.key].assessed ? skillLevel(totals[skill.key].percent) : 0,
         classAvg: classAverages[skill.key],
       })),

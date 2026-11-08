@@ -1,10 +1,16 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import type { Page, UserRole } from '../types';
 import { apiSend, ApiRequestError } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { SetupPanel, SignUpPanel } from './SignUp';
 
 interface LoginPageProps {
   setPage: (page: Page) => void;
+}
+
+/** Shared join links look like https://wallet.school/join/K7Q2-M9XD */
+function joinCodeFromPath(): string | null {
+  return window.location.pathname.match(/^\/join\/([A-Za-z0-9-]+)/)?.[1] ?? null;
 }
 
 const inputClass =
@@ -19,7 +25,27 @@ export default function LoginPage({ setPage }: LoginPageProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [view, setView] = useState<'signin' | 'signup' | 'setup'>(() => (joinCodeFromPath() ? 'signup' : 'signin'));
+  const [setupRequired, setSetupRequired] = useState(false);
   const offline = state.status === 'signed-out' && state.offline;
+
+  // A brand-new installation has no administrator yet: offer first-time setup.
+  useEffect(() => {
+    if (offline) return;
+    fetch('/api/signup/status', { headers: { Accept: 'application/json' } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((status: { setupRequired: boolean } | null) => {
+        if (status?.setupRequired) {
+          setSetupRequired(true);
+          setView('setup');
+        }
+      })
+      .catch(() => undefined);
+  }, [offline]);
+
+  const leaveJoinLink = () => {
+    if (joinCodeFromPath()) window.history.replaceState(null, '', '/');
+  };
 
   const submitPassword = async (e: FormEvent) => {
     e.preventDefault();
@@ -106,7 +132,11 @@ export default function LoginPage({ setPage }: LoginPageProps) {
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
           <div className="bg-white rounded-2xl shadow-sm border border-[#E8EAF0] p-8">
-            {step === 'password' ? (
+            {view === 'setup' ? (
+              <SetupPanel onCancel={setupRequired ? undefined : () => setView('signin')} />
+            ) : view === 'signup' ? (
+              <SignUpPanel initialCode={joinCodeFromPath() ?? ''} onCancel={() => { leaveJoinLink(); setView('signin'); }} />
+            ) : step === 'password' ? (
               <form onSubmit={submitPassword}>
                 <div className="mb-8">
                   <h1 className="font-display font-700 text-2xl text-gray-900 mb-1">Welcome back</h1>
@@ -133,6 +163,14 @@ export default function LoginPage({ setPage }: LoginPageProps) {
                 {error && <p role="alert" className="text-sm text-red-600 font-body mb-4">{error}</p>}
                 <button type="submit" disabled={busy} className="w-full py-3 rounded-xl font-semibold text-sm font-body text-white transition-all active:scale-95 bg-purple-600 hover:bg-purple-700 shadow-sm shadow-purple-200 disabled:opacity-60">
                   {busy ? 'Signing in…' : 'Sign in'}
+                </button>
+                <div className="flex items-center gap-3 my-5" aria-hidden="true">
+                  <div className="h-px flex-1 bg-[#E8EAF0]" />
+                  <span className="text-xs text-gray-400 font-body">New here?</span>
+                  <div className="h-px flex-1 bg-[#E8EAF0]" />
+                </div>
+                <button type="button" onClick={() => { setError(null); setView('signup'); }} className="w-full py-2.5 rounded-xl border border-[#E8EAF0] text-sm font-semibold text-gray-700 hover:bg-gray-50 font-body transition-colors">
+                  Create an account with a join code
                 </button>
               </form>
             ) : (
@@ -166,7 +204,7 @@ export default function LoginPage({ setPage }: LoginPageProps) {
             )}
           </div>
 
-          <div className={`mt-4 ${step === 'code' ? 'hidden' : ''}`}>
+          <div className={`mt-4 ${step === 'code' || view !== 'signin' ? 'hidden' : ''}`}>
             <button
               onClick={() => setPage('public-verification')}
               className="w-full bg-white border border-[#E8EAF0] rounded-xl px-4 py-3 text-sm text-gray-600 hover:border-purple-200 hover:text-purple-700 transition-all font-body"

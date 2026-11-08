@@ -39,6 +39,20 @@ export default function StudentAssessments({ setPage }: Props) {
   const [confirm, setConfirm] = useState<Assigned | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [joinCode, setJoinCode] = useState('');
+  const [joinMessage, setJoinMessage] = useState<{ tone: 'green' | 'red'; text: string } | null>(null);
+
+  const joinClass = async () => {
+    setJoinMessage(null);
+    try {
+      const result = await apiSend<{ className: string }>('POST', '/me/classes/join', { code: joinCode });
+      setJoinMessage({ tone: 'green', text: `You’ve joined ${result.className}.` });
+      setJoinCode('');
+      list.reload();
+    } catch (err) {
+      setJoinMessage({ tone: 'red', text: err instanceof ApiRequestError ? err.message : 'Could not join the class' });
+    }
+  };
 
   if (!list.ready) return <PageStatus error={list.error} onRetry={list.reload} />;
   const items = list.data.assessments;
@@ -90,6 +104,22 @@ export default function StudentAssessments({ setPage }: Props) {
     <div className="p-8 max-w-4xl">
       <PageHeader eyebrow="Student" accent="orange" title="My assessments" subtitle="Assessments your teachers have set for your classes." />
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
+      <Card className="mb-6">
+        <form className="flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); joinClass(); }}>
+          <div className="flex-1 min-w-[220px]">
+            <label htmlFor="join-class" className="block text-xs font-semibold text-gray-700 font-body mb-1.5">Join another class</label>
+            <input
+              id="join-class"
+              value={joinCode}
+              onChange={(e) => setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8).replace(/(.{4})(?=.)/, '$1-'))}
+              placeholder="Class code, e.g. K7Q2-M9XD"
+              className="w-full px-3 py-2 rounded-xl border border-[#E8EAF0] bg-white text-sm font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-orange-500/30"
+            />
+          </div>
+          <Button type="submit" accent="orange" variant="secondary" disabled={joinCode.replace(/-/g, '').length !== 8}>Join</Button>
+        </form>
+        {joinMessage && <div className="mt-3"><Alert tone={joinMessage.tone}>{joinMessage.text}</Alert></div>}
+      </Card>
       {items.length === 0 ? (
         <Card><EmptyState icon="📝" title="Nothing assigned yet">When a teacher assigns an assessment to one of your classes, it appears here.</EmptyState></Card>
       ) : (

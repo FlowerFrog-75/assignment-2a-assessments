@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import type { Page } from '../types';
 import { apiSend, ApiRequestError, useApiData } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { Alert, Button, Card, Field, Input, PageHeader, PageStatus, Select } from '../components/ui';
+import { Alert, Button, Card, copyText, Field, Input, PageHeader, PageStatus, Select } from '../components/ui';
 
 interface Props { setPage: (p: Page) => void; }
 
@@ -22,14 +22,29 @@ const TIMEZONES = ['Australia/Brisbane', 'Australia/Sydney', 'Australia/Melbourn
 
 export default function AdminSchool(_: Props) {
   const { refresh } = useAuth();
-  const loaded = useApiData<{ school: School | null }>('/admin/school', { school: { ...blank, name: 'Northview Secondary College' } });
+  const loaded = useApiData<{ school: School | null; staffCode: string | null; staffCodeEnabled: boolean }>('/admin/school', { school: { ...blank, name: 'Northview Secondary College' }, staffCode: 'K7Q2-M9XD-4PLA', staffCodeEnabled: true });
+  const [staff, setStaff] = useState<{ staffCode: string | null; staffCodeEnabled: boolean }>({ staffCode: null, staffCodeEnabled: false });
+  const [staffMessage, setStaffMessage] = useState<string | null>(null);
   const [form, setForm] = useState<School>(blank);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: 'green' | 'red'; text: string } | null>(null);
 
   useEffect(() => {
-    if (loaded.ready) setForm(loaded.data.school ?? blank);
+    if (loaded.ready) {
+      setForm(loaded.data.school ?? blank);
+      setStaff({ staffCode: loaded.data.staffCode, staffCodeEnabled: loaded.data.staffCodeEnabled });
+    }
   }, [loaded.ready, loaded.data]);
+
+  const updateStaffCode = async (body: { enabled?: boolean; regenerate?: boolean }) => {
+    if (body.regenerate && !window.confirm('Make a new staff code? The old one stops working straight away.')) return;
+    setStaffMessage(null);
+    try {
+      setStaff(await apiSend('POST', '/admin/school/staff-code', body));
+    } catch (err) {
+      setStaffMessage(err instanceof ApiRequestError ? err.message : 'That didn’t work');
+    }
+  };
 
   if (!loaded.ready) return <PageStatus error={loaded.error} onRetry={loaded.reload} />;
   const set = (key: keyof School) => (e: { target: { value: string } }) => setForm({ ...form, [key]: e.target.value });
@@ -87,6 +102,26 @@ export default function AdminSchool(_: Props) {
             <Button type="submit" accent="blue" busy={busy}>Save settings</Button>
           </div>
         </form>
+      </Card>
+      <Card className="mt-6">
+        <h2 className="font-display font-semibold text-gray-900 mb-1">Staff sign-up code</h2>
+        <p className="text-sm text-gray-500 font-body mb-4">
+          Teachers can create their own account with this code (they must set up two-factor authentication). Students sign up with a class code
+          instead, which each class’s teacher controls. Turn the staff code off when you don’t need it.
+        </p>
+        {staff.staffCodeEnabled && staff.staffCode ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="font-mono text-lg font-semibold tracking-[0.15em] text-gray-900">{staff.staffCode}</span>
+            <Button variant="secondary" onClick={async () => setStaffMessage((await copyText(staff.staffCode!)) ? 'Copied' : 'Copy failed')}>Copy</Button>
+            <Button variant="ghost" onClick={() => updateStaffCode({ regenerate: true })}>New code</Button>
+            <Button variant="ghost" className="text-red-600" onClick={() => updateStaffCode({ enabled: false })}>Turn off</Button>
+          </div>
+        ) : (
+          <Button accent="blue" variant="secondary" disabled={!loaded.data.school} onClick={() => updateStaffCode({ enabled: true })}>
+            {loaded.data.school ? 'Turn on staff code' : 'Save the school settings first'}
+          </Button>
+        )}
+        {staffMessage && <p className="text-xs text-gray-500 font-body mt-2" aria-live="polite">{staffMessage}</p>}
       </Card>
       <Card className="mt-6">
         <h2 className="font-display font-semibold text-gray-900 mb-2">Blockchain identity</h2>

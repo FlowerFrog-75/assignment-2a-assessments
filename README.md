@@ -44,8 +44,8 @@ pnpm db:up
 # Blockchain
 pnpm fabric:up
 
-# First administrator (prints a temporary password)
-pnpm admin:create --email you@school.edu.au --first Your --last Name
+# The API prints a one-time setup code in its log while there's no administrator.
+# Open the app and choose "Set up your school". (Or: pnpm admin:create --email ... --first ... --last ...)
 
 # Optional: a starter question bank (teachers approve the questions in the app)
 pnpm db:starter-items
@@ -54,9 +54,19 @@ pnpm db:starter-items
 pnpm dev:full                          # open the address Vite prints (http://localhost:8443 by default)
 ```
 
-Sign in with the temporary password, choose your own password and set up
-two-factor authentication. Then follow the **Getting started** checklist on
-the admin overview.
+Then follow the **Getting started** checklist on the admin overview. People
+can be added by the admin, or sign up themselves: teachers with the school's
+staff code, students with their class's code (or a `/join/<code>` link).
+
+### Reading the charts
+
+Every chart uses the same four skill levels: **Beginning** (under 50%),
+**Developing** (50–74), **Proficient** (75–89) and **Advanced** (90+), drawn as
+gray bands behind the bars. The purple bar is the person in focus; a dark tick
+is the class average. Chart titles state the finding (e.g. *"Above the class
+average in 4 of 6 skills"*), every value is printed, skills not assessed yet say
+so instead of showing 0, and trends only appear once there are two results. The
+components live in `src/components/charts.tsx`.
 
 The screens only ever show real data. In development, if the API isn't
 running (for example in the Figma Make preview), the sign-in page offers a

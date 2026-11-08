@@ -40,6 +40,11 @@ them to the browser.
   use a TOTP authenticator app; their secrets are encrypted with a key derived
   from `APP_SECRET`. New accounts and admin resets get a temporary password
   that must be changed at first sign-in.
+- **Sign-up:** only with a join code. Class codes (8 characters, 40 random
+  bits) enrol a student in that class; the staff code (12 characters, stored
+  encrypted) creates a teacher, who must then set up 2FA. Either can be turned
+  off or replaced at any time. The first administrator needs the one-time setup
+  code printed in the server log, which stops working once an admin exists.
 - **Sessions:** a random token in an `HttpOnly`, `SameSite=Strict` cookie
   (`Secure` in production); only its SHA-256 hash is stored (`sessions`
   collection, expires after 12 hours). A new token is issued after the second
@@ -71,6 +76,8 @@ Changes (POST/PUT/PATCH/DELETE) need the `X-Requested-With: dsw` header.
 | Area | Routes | Who |
 | --- | --- | --- |
 | Health | `GET /health` | anyone |
+| Sign-up | `GET /signup/status`, `POST /signup/setup` (first admin, needs the setup code from the log), `POST /signup/lookup`, `POST /signup` (with a class or staff code), `POST /me/classes/join` | anyone / student |
+| Join codes | `POST /classes/:id/join-code` (teacher of the class, admin), `POST /admin/school/staff-code` (admin) | staff |
 | Sign-in | `POST /auth/login`, `POST /auth/2fa/verify`, `POST /auth/logout`, `GET /auth/me`, `POST /auth/password`, `POST /auth/2fa/setup`, `POST /auth/2fa/enable` | anyone / signed in |
 | Public verification | `GET /verify/:code` | anyone (rate-limited, audit-logged) |
 | Student | `GET /me/dashboard`, `/me/wallet`, `/me/results/latest?attempt=`, `/me/assessments`; `POST /me/assessments/:templateId/start`; `GET /me/attempts/:id`; `PUT /me/attempts/:id/responses`; `POST /me/attempts/:id/submit`; `GET/POST /me/consents`, `DELETE /me/consents/:id`; `GET/POST /me/verification-links`, `POST /me/verification-links/:id/revoke` | student (own data only) |

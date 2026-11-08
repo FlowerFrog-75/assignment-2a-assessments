@@ -13,6 +13,7 @@ import {
 } from "../db/models";
 import { currentUser, requireAuth, requireRole } from "../auth/session";
 import { ApiError, groupSkillAverages, skillTotals } from "./data";
+import { formatCode } from "./signup";
 import {
   SKILL_SHORT,
   SKILL_TABLE_KEY,
@@ -77,9 +78,11 @@ teacherRoutes.get("/classes/current/results", requireAuth(), requireRole("teache
     },
     classes: classes.map((c) => ({ id: c._id.toString(), name: c.name })),
     classId: classGroup._id.toString(),
+    joinCode: classGroup.joinCode ? formatCode(classGroup.joinCode) : null,
+    joinEnabled: Boolean(classGroup.joinEnabled),
     completed: { done: attempts.length, expected: assigned * students.length },
     students: rows,
-    skillAverages: SKILLS.map((s) => ({ skill: SKILL_SHORT[s.key], avg: averages[s.key] })),
+    skillAverages: SKILLS.map((s) => ({ key: s.key, skill: SKILL_SHORT[s.key], name: s.label, avg: averages[s.key] })),
     classProgress: [...weeks].sort(([a], [b]) => a - b).map(([week, list]) => ({
       week: `Wk ${week}`,
       avg: average(list.map((a) => a.result!.percent)),

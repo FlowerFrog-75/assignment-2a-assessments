@@ -70,6 +70,11 @@ function Shell() {
     else setPageState((current) => (state.status === 'loading' ? current : 'login'));
   }, [role, state.status]);
 
+  // A join link (/join/CODE) has done its job once someone is signed in.
+  useEffect(() => {
+    if (role && window.location.pathname.startsWith('/join')) window.history.replaceState(null, '', `/${window.location.hash}`);
+  }, [role]);
+
   // Keep the address bar in step when the app redirects (e.g. to the home page).
   useEffect(() => {
     if (role && page !== 'login' && canOpen(role, page) && window.location.hash !== `#/${page}`) {
