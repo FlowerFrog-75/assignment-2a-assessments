@@ -170,6 +170,13 @@ const ACTION_LABELS: Record<string, string> = {
   "wallet.coins.issue": "Skill Coins Issued",
   "wallet.coins.revoke": "Skill Coins Revoked",
   "ledger.sync": "Blockchain Sync",
+  "ai.generate": "AI Questions Requested",
+  "ai.suggest_marks": "AI Marks Suggested",
+  "ai.draft_feedback": "AI Feedback Drafted",
+  "user.signup": "Signed Up",
+  "class.join": "Joined Class",
+  "class.join_code": "Class Code Changed",
+  "school.staff_code": "Staff Code Changed",
 };
 
 const STATUS_LABELS = { success: "Success", warning: "Warning", denied: "Warning", failure: "Error" } as const;

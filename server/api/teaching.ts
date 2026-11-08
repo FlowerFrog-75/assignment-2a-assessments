@@ -19,6 +19,7 @@ import {
   ClassGroupModel,
   UserModel,
   appendAuditLog,
+  currentSchool,
   type AssessmentTemplateDocument,
   type UserDocument,
 } from "../db/models";
@@ -26,6 +27,9 @@ import { currentUser, requireAuth, requireRole } from "../auth/session";
 import { blueprintAvailability, computeResult } from "../assessment/engine";
 import { issueRewards, syncLedgerSoon } from "../assessment/coins";
 import { ApiError } from "./data";
+import { draftFeedback, suggestMarks } from "../ai/marking-agent";
+import { aiMode, aiStatus, describeAiError } from "../ai/provider";
+import { rateLimit } from "../auth/rate-limit";
 import { formatDate, formatTimestamp } from "./format";
 
 export const teachingRoutes = Router();
@@ -114,6 +118,7 @@ teachingRoutes.get("/items", ...staff, async (req, res) => {
       createdBy: i.createdBy ? people.get(i.createdBy.toString()) ?? "" : "",
       reviewedBy: i.review?.reviewedBy ? people.get(i.review.reviewedBy.toString()) ?? "" : "",
       reviewComments: i.review?.comments ?? "",
+      ai: i.source === "ai" ? { model: i.generation?.model ?? null, passed: i.generation?.validation?.passed ?? null, notes: i.generation?.validation?.notes ?? "" } : null,
       updated: formatDate(i.updatedAt),
       inUse: used.has(i._id.toString()),
     })),
@@ -482,6 +487,86 @@ teachingRoutes.get("/marking/:id", ...staff, async (req, res) => {
 });
 
 /** POST /api/marking/:id { marks: { [itemId]: points }, feedback }: saves marks for written answers. */
+/** AI marking help must be turned on by an admin, and AI must be set up. */
+async function aiMarkingMode(): Promise<"claude" | "offline"> {
+  const school = await currentSchool();
+  if (!school?.aiMarkingEnabled) throw new ApiError(403, "ai_marking_off", "AI marking help is turned off. An administrator can turn it on in School Settings.");
+  const mode = aiMode();
+  if (mode === "off") throw new ApiError(409, "ai_off", "AI isn't set up on this server. An administrator needs to add ANTHROPIC_API_KEY.");
+  return mode;
+}
+
+/** POST /api/marking/:id/ai-suggest: suggested marks for written answers (never saved). */
+// Per teacher, not per IP address: a whole school shares one.
+const perUser = (req: Request) => String(currentUser(req)._id);
+
+teachingRoutes.post("/marking/:id/ai-suggest", ...staff, rateLimit("ai-mark", 60, 10 * 60_000, perUser), async (req, res) => {
+  const me = currentUser(req);
+  const mode = await aiMarkingMode();
+  const attempt = await markableAttempt(req);
+  if (attempt.status === "released") throw new ApiError(409, "already_released", "Results have been released, so marks are final");
+  const items = await AssessmentItemModel.find({ _id: { $in: attempt.questions.map((q) => q.item) }, type: "short_response" }).select("+answer").lean();
+  const inputs = attempt.questions
+    .map((q) => {
+      const item = items.find((i) => i._id.equals(q.item));
+      if (!item) return null;
+      return {
+        itemId: q.item.toString(),
+        skill: skillLabel(q.skill as SkillKey),
+        prompt: item.prompt,
+        modelAnswer: item.answer?.modelAnswer ?? "",
+        rubric: item.answer?.rubric ?? "",
+        maxPoints: q.maxPoints,
+        answer: attempt.responses.find((r) => r.item.equals(q.item))?.answer ?? "",
+      };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
+  if (!inputs.length) throw new ApiError(400, "nothing_to_mark", "There are no written answers on this paper.");
+  let suggestions;
+  try {
+    suggestions = await suggestMarks(inputs, mode);
+  } catch (error) {
+    throw new ApiError(502, "ai_failed", describeAiError(error));
+  }
+  await audit(req, me, "ai.suggest_marks", `AI suggested marks for ${inputs.length} written answer${inputs.length === 1 ? "" : "s"}`, { subjectStudent: attempt.student, resource: { type: "attempt", id: attempt._id.toString() }, details: { mode } });
+  res.json({ suggestions, ...aiStatus() });
+});
+
+/** POST /api/marking/:id/ai-feedback: a draft feedback comment (never saved). */
+teachingRoutes.post("/marking/:id/ai-feedback", ...staff, rateLimit("ai-feedback", 60, 10 * 60_000, perUser), async (req, res) => {
+  const me = currentUser(req);
+  const mode = await aiMarkingMode();
+  const attempt = await markableAttempt(req);
+  const template = await AssessmentTemplateModel.findById(attempt.template, { title: 1 }).lean();
+  const items = await AssessmentItemModel.find({ _id: { $in: attempt.questions.map((q) => q.item) } }, { prompt: 1 }).lean();
+  const result = attempt.result ?? computeResult(attempt); // provisional if not fully marked yet
+  let feedback;
+  try {
+    feedback = await draftFeedback(
+      {
+        assessment: template?.title ?? "Assessment",
+        percent: result.percent,
+        skills: result.skillScores.map((s) => ({ skill: skillLabel(s.skill as SkillKey), percent: s.percent })),
+        questions: attempt.questions.map((q) => {
+          const response = attempt.responses.find((r) => r.item.equals(q.item));
+          return {
+            skill: skillLabel(q.skill as SkillKey),
+            prompt: items.find((i) => i._id.equals(q.item))?.prompt ?? "",
+            answer: response?.answer ?? "",
+            points: typeof response?.pointsAwarded === "number" ? response.pointsAwarded : null,
+            maxPoints: q.maxPoints,
+          };
+        }),
+      },
+      mode,
+    );
+  } catch (error) {
+    throw new ApiError(502, "ai_failed", describeAiError(error));
+  }
+  await audit(req, me, "ai.draft_feedback", "AI drafted feedback", { subjectStudent: attempt.student, resource: { type: "attempt", id: attempt._id.toString() }, details: { mode } });
+  res.json({ feedback, ...aiStatus() });
+});
+
 teachingRoutes.post("/marking/:id", ...staff, async (req, res) => {
   const me = currentUser(req);
   const attempt = await markableAttempt(req);

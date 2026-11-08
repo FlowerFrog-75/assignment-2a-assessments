@@ -11,7 +11,7 @@ import { randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import { Router, type Request } from "express";
 import { Types } from "mongoose";
 import { ClassGroupModel, SchoolModel, UserModel, appendAuditLog, currentSchool, type UserDocument } from "../db/models";
-import { currentUser, requireAuth, requireRole, startSession } from "../auth/session";
+import { currentUser, requireAuth, requireRole, sampleModeEnabled, startSession } from "../auth/session";
 import { rateLimit } from "../auth/rate-limit";
 import { hashPassword } from "../security/password";
 import { decryptSecret, encryptSecret } from "../security/secrets";
@@ -114,9 +114,26 @@ async function assertEmailFree(address: string) {
 }
 
 /** GET /api/signup/status: does this installation still need its first administrator? */
+/** The simple password every sample-school account uses. */
+export const SAMPLE_PASSWORD = "password123";
+
 signupRoutes.get("/signup/status", async (_req, res) => {
   const school = await currentSchool();
-  res.json({ setupRequired: !(await adminExists()), school: school?.name ?? null });
+  // The sample school's logins, for the one-click buttons on the sign-in page.
+  let sample = null;
+  if (sampleModeEnabled()) {
+    const accounts = await UserModel.find({ sample: true, status: "active", email: { $in: ["student@sample.school", "teacher@sample.school", "admin@sample.school"] } }, { firstName: 1, lastName: 1, email: 1, role: 1 }).lean();
+    if (accounts.length) {
+      const order = { student: 0, teacher: 1, admin: 2 } as const;
+      sample = {
+        password: SAMPLE_PASSWORD,
+        accounts: accounts
+          .sort((a, b) => order[a.role as keyof typeof order] - order[b.role as keyof typeof order])
+          .map((a) => ({ role: a.role, name: `${a.firstName} ${a.lastName}`, email: a.email })),
+      };
+    }
+  }
+  res.json({ setupRequired: !(await adminExists()), school: school?.name ?? null, sample });
 });
 
 /** POST /api/signup/setup { setupCode, schoolName, firstName, lastName, email, password } */

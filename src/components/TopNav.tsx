@@ -24,6 +24,7 @@ export default function TopNav({ currentPage, setPage }: TopNavProps) {
           <polyline points="9 18 15 12 9 6" />
         </svg>
         <span className={`text-sm font-semibold font-display ${sectionColor[info.section]}`}>{pageTitle(currentPage, user.role)}</span>
+        {user.sample && !preview && <span className="ml-3 text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100">Sample school · not for real data</span>}
         {preview && <span className="ml-3 text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100">Design preview · sample data</span>}
       </div>
       <div className="flex items-center gap-2">

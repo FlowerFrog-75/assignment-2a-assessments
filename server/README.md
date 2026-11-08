@@ -9,13 +9,16 @@ server/
   index.ts      Express server: security headers, /api routes, the built app in production,
                 and the background ledger retry loop
   api/          Routes, one file per area (auth, admin, teaching, assessments, students,
-                teacher, public, ledger)
+                teacher, public, ledger, ai)
+  ai/           The AI assistant: question author + validator agents, marking and
+                feedback suggestions, and the labelled offline stand-in
   auth/         Sessions, role checks, rate limiting
   assessment/   The assessment engine (seeded papers, marking) and coin/achievement issuing
   db/           MongoDB connection, constants and Mongoose models
   ledger/       Fabric Gateway client: skillcoin contract, MongoDB→ledger sync, block reader
   security/     Password hashing (scrypt), TOTP 2FA, encryption of 2FA secrets (AES-256-GCM)
-  scripts/      Command-line tools: create admin, starter questions, indexes, ledger sync and audit
+  scripts/      Command-line tools: create admin, starter questions, sample school, indexes,
+                ledger sync and audit
 ```
 
 Nothing in `src/` may import from `server/`. This folder uses database
@@ -59,6 +62,10 @@ them to the browser.
   classes, and individual results only with the student's consent. Admins
   can see everything (oversight). Every view of a student's data, and every
   change, is written to the hash-chained audit log; students see entries about themselves.
+- **Sample school:** accounts made by `pnpm sample:school` are flagged `sample`.
+  They skip 2FA and use `password123`, so they only work while sample mode is
+  on (`SAMPLE_SCHOOL=on`, or unset outside production). With it off they are
+  refused at sign-in and their sessions end.
 
 ## How the screens get their data
 
@@ -85,6 +92,7 @@ Changes (POST/PUT/PATCH/DELETE) need the `X-Requested-With: dsw` header.
 | Question bank | `GET /items`, `POST /items`, `PUT /items/:id`, `POST /items/:id/review`, `POST /items/:id/retire` | teacher, admin |
 | Templates | `GET /templates`, `GET/PUT /templates/:id`, `POST /templates`, `POST /templates/:id/status`, `POST /templates/:id/duplicate`, `PUT/DELETE /templates/:id/assignments/:classId` | teacher (own templates and classes), admin |
 | Marking | `GET /marking`, `GET/POST /marking/:id`, `POST /marking/release` | teacher (own classes), admin |
+| AI | `GET /ai/status`; `POST /ai/item-jobs`, `POST /ai/templates/:id/fill` (both return `202 { jobId }`); `GET /ai/jobs`, `GET /ai/jobs/:id`; `POST /marking/:id/ai-suggest`, `POST /marking/:id/ai-feedback` (only with the school's AI marking setting on; never save) | teacher, admin |
 | Audit log | `GET /audit-logs` | everyone, filtered by role |
 | Administration | `GET /admin/overview`; `GET/PUT /admin/school`; `GET/POST /admin/users`, `PATCH /admin/users/:id`, `POST /admin/users/:id/{reset-password,reset-2fa,unlock,sign-out}`; `GET/POST /admin/classes`, `PUT /admin/classes/:id`; `GET /admin/wallet-events`, `POST /admin/wallet-events/:id/revoke`, `POST /admin/ledger/sync` | admin |
 | Blockchain | `GET /ledger/overview?wallet=` | admin |
@@ -104,6 +112,40 @@ Changes (POST/PUT/PATCH/DELETE) need the `X-Requested-With: dsw` header.
 5. On **release**, the student sees the result, earns 10 skill coins per
    mark in each skill plus any achievements, and the coins are written to
    Fabric in the background (with the result's fingerprint).
+
+## The AI assistant (`ai/`)
+
+`ai/provider.ts` picks the mode: **claude** when `ANTHROPIC_API_KEY` is set,
+**offline** (a scripted stand-in, labelled *Offline demo · not real AI*) when
+`AI_OFFLINE_DEMO=on` or in sample mode without a key, otherwise **off** (the
+buttons explain that AI isn't set up). Requests use the server-side refusal
+fallback (`fallbacks: "default"`), so a declined request is retried on the
+fallback model rather than failing.
+
+**Question generator** (`ai/item-agent.ts`, run as a background `AiJob` whose
+steps the UI shows live):
+
+1. **Author agent**: a tool-use loop with `search_item_bank` (the school's
+   approved questions as examples), `check_similarity` (avoid near-duplicates)
+   and `submit_item`, which is checked on the server (options, answer key,
+   skill, complexity) and returns errors for the agent to fix.
+2. **Validator agent**: a separate call with structured output that sees only
+   the finished questions, never the author's reasoning. It checks the answer
+   key, a single best answer, the skill, the complexity and age-appropriateness.
+3. Questions that fail are **revised once** and validated again.
+4. Passing questions are saved as `pending_review`, failing ones as `draft`,
+   with `source: "ai"` and `generation.validation`. **A teacher must approve
+   every one** (the model requires `review.reviewedBy`).
+
+**Marking** (`ai/marking-agent.ts`): suggested marks (with reasons and a
+confidence) for written answers, and a feedback draft. They receive the
+question, marking guide, model answer and answer text, with no name, email or
+wallet ID, only when an admin has turned on `school.aiMarkingEnabled`, and
+they never save anything.
+
+Limits: one running job per teacher, `AI_DAILY_JOBS` per day (default 20),
+`AI_MAX_ITEMS_PER_JOB` (default 10), and a per-user rate limit on marking
+suggestions. Every AI action is audit-logged.
 
 Using the data layer from new routes:
 

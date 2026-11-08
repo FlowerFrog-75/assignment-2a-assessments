@@ -35,8 +35,25 @@ function setCookie(req: Request, res: Response, token: string, maxAgeSeconds: nu
   );
 }
 
+/**
+ * Sample-school accounts (simple passwords, no 2FA) only work while sample
+ * mode is on: by default in development, and in production only with
+ * SAMPLE_SCHOOL=on. A forgotten sample account can't be used on a real server.
+ */
+export function sampleModeEnabled(): boolean {
+  const setting = process.env.SAMPLE_SCHOOL;
+  if (setting) return setting === "on";
+  return process.env.NODE_ENV !== "production";
+}
+
+/** Sample accounts skip 2FA (and only exist while sample mode is on). */
+export function isSampleUser(user: UserDocument): boolean {
+  return Boolean(user.sample) && sampleModeEnabled();
+}
+
 /** Staff must use 2FA. Everyone must replace a temporary password. */
 export function setupRequired(user: UserDocument): boolean {
+  if (isSampleUser(user)) return false;
   return Boolean(user.mustChangePassword) || (user.role !== "student" && !user.twoFactor?.enabled);
 }
 
@@ -74,7 +91,7 @@ export const loadSession: RequestHandler = async (req, _res, next) => {
     if (token) {
       const session = await SessionModel.findOne({ tokenHash: hashToken(token), expiresAt: { $gt: new Date() } });
       const user = session && (await UserModel.findById(session.user));
-      if (session && user && user.status === "active") {
+      if (session && user && user.status === "active" && (!user.sample || sampleModeEnabled())) {
         req.auth = { session, user };
         if (Date.now() - session.lastSeenAt.getTime() > 60_000) {
           await SessionModel.updateOne({ _id: session._id }, { $set: { lastSeenAt: new Date() } });

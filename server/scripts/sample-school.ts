@@ -1,64 +1,41 @@
-// Builds a demo school on an EMPTY test installation, for showing the app to
-// people: an administrator, a teacher and a class of students with a few
-// weeks of assessment history, coins on the blockchain, and one assessment
-// left for you to sit live.
+// Builds the SAMPLE SCHOOL on an empty installation: an administrator, a
+// teacher and a class of students with a few weeks of results, coins on the
+// blockchain, AI-drafted questions waiting for review, and one assessment left
+// for you to sit live. Every account uses the password "password123" and no 2FA.
 //
-//   pnpm demo:setup                       # school called "Demo School"
-//   pnpm demo:setup --school "Kelvin Grove Demo"
-//   pnpm demo:code                        # current 2FA codes for the demo staff accounts
+//   pnpm sample:school
 //
-// Everything is created through the app's own API (sign-up with codes,
-// sitting assessments, marking, releasing), exactly as people would. The only
-// shortcut: the first three assessments are dated over the past five weeks so
-// the trend charts have something to show.
+// Sample accounts only work while sample mode is on (the default in
+// development; set SAMPLE_SCHOOL=on to use them on a server). Everything is
+// created through the app's own API (sign-up with codes, sitting assessments,
+// marking, releasing). The only shortcut: the first three assessments are
+// dated over the past five weeks so the trend charts have something to show.
 //
-// It refuses to run on a database that already has accounts, so it can't mix
-// demo data into a real school. Account details are written to
-// demo-accounts.txt (git-ignored).
+// It refuses to run on a database that already has accounts.
 import "./load-env";
-import { writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { createHmac, randomInt } from "node:crypto";
 import { parseArgs } from "node:util";
 
 process.env.LEDGER_SYNC = "off"; // we sync once at the end, after dating the history
+process.env.SAMPLE_SCHOOL = "on"; // sample accounts skip 2FA
 
 const { default: express } = await import("express");
-const QRCode = (await import("qrcode")).default;
 const { connectToDatabase, disconnectFromDatabase } = await import("../db/connect");
 const { AssessmentAttemptModel, UserModel } = await import("../db/models");
 const { apiErrorHandler, apiRouter } = await import("../api/router");
-const { ensureSetupCode } = await import("../api/signup");
+const { ensureSetupCode, SAMPLE_PASSWORD } = await import("../api/signup");
 const { syncWalletEventsToLedger, closeLedgerConnections, describeLedgerError } = await import("../ledger");
 
 const { values } = parseArgs({
   options: {
-    school: { type: "string", default: "Demo School" },
-    url: { type: "string", default: process.env.DEMO_URL ?? "http://localhost:8443" },
+    school: { type: "string", default: "Riverside High School (Sample)" },
+    url: { type: "string", default: process.env.SAMPLE_URL ?? "http://localhost:8443" },
     "i-understand": { type: "boolean", default: false },
   },
 });
 
 // ------------------------------------------------------------ helpers
-
-const WORDS = "amber,anchor,birch,breeze,cedar,cloud,comet,coral,crane,delta,ember,fern,frost,grove,harbor,hazel,heron,jade,kite,lemon,maple,meadow,mint,ocean,olive,orbit,pearl,pine,plum,quartz,raven,reef,ridge,river,robin,sage,slate,spruce,summit,swift,tide,timber,valley,willow,wren".split(",");
-const password = () => `${WORDS[randomInt(WORDS.length)]}-${WORDS[randomInt(WORDS.length)]}-${randomInt(1000, 10000)}`;
-
-function b32(s: string) {
-  const A = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-  let bits = 0, v = 0;
-  const out: number[] = [];
-  for (const c of s) { v = (v << 5) | A.indexOf(c); bits += 5; if (bits >= 8) { out.push((v >>> (bits - 8)) & 255); bits -= 8; } }
-  return Buffer.from(out);
-}
-function totp(secret: string, offset = 0) {
-  const step = Math.floor(Date.now() / 30000) + offset;
-  const m = Buffer.alloc(8);
-  m.writeBigUInt64BE(BigInt(step));
-  const h = createHmac("sha1", b32(secret)).update(m).digest();
-  const o = h[h.length - 1] & 15;
-  return String((h.readUInt32BE(o) & 0x7fffffff) % 1e6).padStart(6, "0");
-}
 
 let seed = 20261108;
 const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -80,8 +57,11 @@ class Session {
 }
 
 const step = (text: string) => console.log(`  • ${text}`);
+const password = () => SAMPLE_PASSWORD;
+/** Marks a just-created account as a sample account (simple password, no 2FA). */
+const markSample = (email: string) => UserModel.updateOne({ email }, { $set: { sample: true, mustChangePassword: false } });
 
-// ------------------------------------------------------------ the demo
+// ------------------------------------------------------------ the school
 
 const STUDENTS: { first: string; last: string; base: number; growth: number }[] = [
   { first: "Mia", last: "Chen", base: 0.62, growth: 0.08 }, // the student you sign in as
@@ -115,13 +95,13 @@ async function main() {
   await connectToDatabase();
   const accounts = await UserModel.countDocuments();
   if (accounts > 0) {
-    console.error(`\ndemo:setup only runs on an EMPTY database, and this one has ${accounts} account(s).`);
-    console.error("It never mixes demo data into a real school. To start a fresh test machine, see docs/DEMO.md (\"Reset\").\n");
+    console.error(`\nsample:school only runs on an EMPTY database, and this one has ${accounts} account(s).`);
+    console.error("It never mixes sample data into a real school. To start fresh on a test machine, see docs/DEMO.md (\"Reset\").\n");
     process.exitCode = 1;
     return;
   }
   if (process.env.NODE_ENV === "production" && !values["i-understand"]) {
-    console.error("\nNODE_ENV is production. Demo data belongs on a test installation.");
+    console.error("\nNODE_ENV is production. The sample school belongs on a test installation.");
     console.error("If this really is a test server, re-run with --i-understand.\n");
     process.exitCode = 1;
     return;
@@ -134,24 +114,22 @@ async function main() {
   const server = app.listen(0, "127.0.0.1");
   await new Promise((resolve) => server.once("listening", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api`;
-  console.log(`\nBuilding the demo school "${values.school}"…`);
+  console.log(`\nBuilding the sample school "${values.school}"…`);
 
   // 1. School and administrator (first-time setup, as in the browser)
   const admin = new Session();
   const adminPassword = password();
-  await admin.call("POST", "/signup/setup", { setupCode: await ensureSetupCode(), schoolName: values.school, firstName: "Jordan", lastName: "Lee", email: "admin@school.example", password: adminPassword });
-  const adminSecret = (await admin.call("POST", "/auth/2fa/setup")).secret as string;
-  await admin.call("POST", "/auth/2fa/enable", { code: totp(adminSecret) });
-  await admin.call("PUT", "/admin/school", { name: values.school, shortName: "DEMO", academicYear: new Date().getFullYear(), term: 4, walletPrefix: "DEMO", timezone: "Australia/Brisbane" });
+  await admin.call("POST", "/signup/setup", { setupCode: await ensureSetupCode(), schoolName: values.school, firstName: "Alex", lastName: "Morgan", email: "admin@sample.school", password: adminPassword });
+  await markSample("admin@sample.school");
+  await admin.call("PUT", "/admin/school", { name: values.school, shortName: "Riverside", academicYear: new Date().getFullYear(), term: 4, walletPrefix: "RHS", timezone: "Australia/Brisbane", aiMarkingEnabled: true });
   const staffCode = (await admin.call("POST", "/admin/school/staff-code", { enabled: true })).staffCode as string;
-  step("School and administrator (Jordan Lee)");
+  step("School and administrator (Alex Morgan)");
 
   // 2. Teacher signs up with the staff code
   const teacher = new Session();
   const teacherPassword = password();
-  await teacher.call("POST", "/signup", { code: staffCode, firstName: "Sam", lastName: "Rivera", email: "teacher@school.example", password: teacherPassword });
-  const teacherSecret = (await teacher.call("POST", "/auth/2fa/setup")).secret as string;
-  await teacher.call("POST", "/auth/2fa/enable", { code: totp(teacherSecret) });
+  await teacher.call("POST", "/signup", { code: staffCode, firstName: "Sam", lastName: "Rivera", email: "teacher@sample.school", password: teacherPassword });
+  await markSample("teacher@sample.school");
   const teacherId = (await teacher.call("GET", "/auth/me")).user.id as string;
   step("Teacher (Sam Rivera) signed up with the staff code");
 
@@ -161,9 +139,10 @@ async function main() {
   const students: { first: string; last: string; email: string; password: string; session: Session; base: number; growth: number }[] = [];
   for (const s of STUDENTS) {
     const session = new Session();
-    const email = s.first === "Mia" ? "student@school.example" : `${s.first.toLowerCase()}.${s.last.toLowerCase()}@school.example`;
+    const email = s.first === "Mia" ? "student@sample.school" : `${s.first.toLowerCase()}@sample.school`;
     const pw = password();
     await session.call("POST", "/signup", { code: classCode, firstName: s.first, lastName: s.last, email, password: pw, yearLevel: 10 });
+    await markSample(email);
     students.push({ ...s, email, password: pw, session });
   }
   step(`${students.length} students signed up with class code ${classCode}`);
@@ -243,11 +222,23 @@ async function main() {
 
   // A late joiner with no results yet
   const leoPassword = password();
-  await new Session().call("POST", "/signup", { code: classCode, firstName: "Leo", lastName: "Rossi", email: "leo.rossi@school.example", password: leoPassword, yearLevel: 10 });
-  students.push({ first: "Leo", last: "Rossi", email: "leo.rossi@school.example", password: leoPassword, session: new Session(), base: 0, growth: 0 });
+  await new Session().call("POST", "/signup", { code: classCode, firstName: "Leo", lastName: "Rossi", email: "leo@sample.school", password: leoPassword, yearLevel: 10 });
+  await markSample("leo@sample.school");
+  students.push({ first: "Leo", last: "Rossi", email: "leo@sample.school", password: leoPassword, session: new Session(), base: 0, growth: 0 });
   step("Leo Rossi joined late (no results yet)");
 
-  // 7. Write the coins to the blockchain
+  // 7. The AI drafts a few questions for the teacher to review
+  const job = await teacher.call("POST", "/ai/item-jobs", { subject: "General Capabilities", skills: ["critical-thinking", "creativity"], complexities: [2, 3], count: 4, types: "mixed", yearLevel: 10, topic: "Everyday decisions at school" });
+  let aiJob: any = null;
+  for (let i = 0; i < 180; i++) {
+    aiJob = await teacher.call("GET", `/ai/jobs/${job.jobId}`);
+    if (aiJob.status !== "running" && aiJob.status !== "queued") break;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  const queuedCount = aiJob?.items?.filter((i: any) => i.status === "pending_review").length ?? 0;
+  step(aiJob?.status === "succeeded" ? `AI (${aiJob.mode === "offline" ? "offline demo" : aiJob.model}) drafted and validated questions: ${queuedCount} waiting for the teacher's review` : `AI step skipped: ${aiJob?.error ?? "no result"}`);
+
+  // 8. Write the coins to the blockchain
   // A network started moments ago can take a little while before both
   // organisations can endorse, so retry for up to a minute.
   let ledgerNote = "";
@@ -269,39 +260,18 @@ async function main() {
   step(ledgerNote);
   server.close();
 
-  // 8. The demo sheet
+  // 9. Summary
   const url = values.url!.replace(/\/$/, "");
-  const sheet = [
-    `DEMO SCHOOL: ${values.school}`,
-    `Open: ${url}`,
-    "",
-    "Sign in as:",
-    `  ADMIN     admin@school.example      ${adminPassword}    Jordan Lee   (2FA code: pnpm demo:code)`,
-    `  TEACHER   teacher@school.example    ${teacherPassword}    Sam Rivera   (2FA code: pnpm demo:code)`,
-    `  STUDENT   student@school.example    ${students[0].password}    Mia Chen     (has "Term Check-in" to sit live)`,
-    "",
-    `Class code:   ${classCode}     → sign up a new student live at ${url}/join/${classCode}`,
-    `Staff code:   ${staffCode}`,
-    `Mia's verification link (open in a private window): ${url}/verify/${link.code}`,
-    "",
-    "Other students (all in 10 Thinking A):",
-    ...students.slice(1).map((s) => `  ${`${s.first} ${s.last}`.padEnd(16)} ${s.email.padEnd(34)} ${s.password}`),
-    "",
-    "Noah Nguyen hasn't given consent: open him from Class Results to show the refusal.",
-    "Run sheet: docs/DEMO.md",
-  ].join("\n");
-  writeFileSync("demo-accounts.txt", sheet + "\n", { mode: 0o600 });
-  writeFileSync("demo-accounts.json", JSON.stringify({ admin: { email: "admin@school.example", secret: adminSecret }, teacher: { email: "teacher@school.example", secret: teacherSecret } }, null, 2), { mode: 0o600 });
-
-  console.log(`\n${"─".repeat(78)}\n${sheet}\n${"─".repeat(78)}`);
-  console.log("\nTwo-factor codes for the staff accounts: run `pnpm demo:code` any time,");
-  console.log("or scan these into an authenticator app on your phone (Google/Microsoft Authenticator):\n");
-  for (const [label, email, secret] of [["ADMIN", "admin@school.example", adminSecret], ["TEACHER", "teacher@school.example", teacherSecret]] as const) {
-    const uri = `otpauth://totp/${encodeURIComponent(values.school!)}:${encodeURIComponent(email)}?secret=${secret}&issuer=${encodeURIComponent(values.school!)}&algorithm=SHA1&digits=6&period=30`;
-    console.log(`${label} (${email})`);
-    console.log(await QRCode.toString(uri, { type: "terminal", small: true }));
-  }
-  console.log("Saved to demo-accounts.txt (git-ignored).\n");
+  console.log(`\n${"─".repeat(72)}`);
+  console.log(`SAMPLE SCHOOL ready: ${values.school}`);
+  console.log(`Open ${url} and use the one-click buttons, or sign in with:`);
+  console.log(`  Student   student@sample.school   (Mia Chen: has an assessment to sit live)`);
+  console.log(`  Teacher   teacher@sample.school   (Sam Rivera)`);
+  console.log(`  Admin     admin@sample.school     (Alex Morgan)`);
+  console.log(`  Password for every sample account: ${SAMPLE_PASSWORD}   (no 2FA)`);
+  console.log(`  Classmates: <first name>@sample.school, e.g. noah@sample.school`);
+  console.log(`\nClass code ${classCode} · staff code ${staffCode} · Mia's verification link: ${url}/verify/${link.code}`);
+  console.log(`${"─".repeat(72)}\n`);
 }
 
 main()

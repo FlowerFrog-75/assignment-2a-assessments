@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import type { Page } from '../types';
 import { apiGet, apiSend, ApiRequestError, selectTemplate, selectedTemplate, useApiData } from '../lib/api';
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, PageStatus, Select, SKILL_OPTIONS, skillLabel, Textarea } from '../components/ui';
+import { AgentRun } from '../components/AiQuestionGenerator';
+import { AI_OFF_MESSAGE, useAiStatus } from '../lib/ai';
 
 interface Props { setPage: (p: Page) => void; }
 
@@ -57,6 +59,8 @@ export default function TemplateEditor({ setPage }: Props) {
   const [notice, setNotice] = useState<{ tone: 'green' | 'red' | 'amber'; text: string } | null>(null);
   const [assignClass, setAssignClass] = useState('');
   const [assignDue, setAssignDue] = useState('');
+  const ai = useAiStatus();
+  const [aiJob, setAiJob] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isNew && loaded.ready) setForm(loaded.data);
@@ -264,7 +268,29 @@ export default function TemplateEditor({ setPage }: Props) {
               + Add row {form.skills.length === 0 && '(choose skills first)'}
             </Button>
           )}
-          {short.length > 0 && <div className="mt-3"><Alert tone="amber">Some rows need more approved questions before this can be published. Add or approve them in the Question Bank.</Alert></div>}
+          {short.length > 0 && (
+            <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-amber-900 font-body">Some rows need more approved questions before this can be published.</p>
+              <span title={ai.ready && ai.data.mode === 'off' ? AI_OFF_MESSAGE : undefined}>
+                <Button
+                  className="!bg-violet-600 hover:!bg-violet-700"
+                  disabled={isNew || !ai.ready || ai.data.mode === 'off'}
+                  onClick={async () => {
+                    setNotice(null);
+                    try {
+                      await apiSend('PUT', `/templates/${form.id}`, body());
+                      const result = await apiSend<{ jobId: string }>('POST', `/ai/templates/${form.id}/fill`);
+                      setAiJob(result.jobId);
+                    } catch (err) {
+                      setNotice({ tone: 'red', text: err instanceof ApiRequestError ? err.message : 'Could not start the AI' });
+                    }
+                  }}
+                >
+                  ✦ Draft the missing questions with AI
+                </Button>
+              </span>
+            </div>
+          )}
           <div className="mt-5 flex gap-2">
             <Button accent="emerald" busy={busy} onClick={save}>{isNew ? 'Save draft' : 'Save changes'}</Button>
             <Button variant="secondary" onClick={() => setPage('item-bank')}>Open question bank</Button>
@@ -312,6 +338,16 @@ export default function TemplateEditor({ setPage }: Props) {
             <p className="text-xs text-gray-500 font-body">Publish the template to assign it.</p>
           )}
         </Card>
+      )}
+      {aiJob && (
+        <AgentRun
+          jobId={aiJob}
+          onClose={async () => {
+            setAiJob(null);
+            await refreshAvailability(form);
+          }}
+          onReview={() => setPage('item-bank')}
+        />
       )}
     </div>
   );

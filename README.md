@@ -24,12 +24,42 @@ Everything runs on your own machines. Nothing is hosted.
 
 ## Showing it to people
 
-**[`docs/DEMO.md`](docs/DEMO.md)** is a 15-minute run sheet for the student,
-teacher and admin views side by side. On a test machine,
-`pnpm demo:setup` builds a demo school (accounts for each role, a class with
-a few weeks of results, coins on the blockchain, and an assessment left to sit
-live), and `pnpm demo:code` prints the staff accounts' 2FA codes. It refuses
+On a test machine, `pnpm sample:school` builds **Riverside High School
+(Sample)**: a class with a few weeks of results, coins on the blockchain, AI-drafted
+questions waiting for review, and an assessment left to sit live. The sign-in
+page then has one-click buttons, or sign in with:
+
+| Role | Email | Password |
+| --- | --- | --- |
+| Student (Mia Chen) | `student@sample.school` | `password123` |
+| Teacher (Sam Rivera) | `teacher@sample.school` | `password123` |
+| Administrator (Alex Morgan) | `admin@sample.school` | `password123` |
+
+Sample accounts skip 2FA and only work in **sample mode** (on by default in
+development, off in production unless `SAMPLE_SCHOOL=on`). The script refuses
 to run on a database that already has accounts.
+**[`docs/DEMO.md`](docs/DEMO.md)** is a 15-minute run sheet for the three views
+side by side.
+
+## The AI assistant
+
+The plan's agentic AI drafts and independently checks assessment questions,
+and helps teachers mark. A teacher stays in charge of everything:
+
+- **Generate questions** (Question Bank, or *Draft the missing questions* on a
+  template). An author agent drafts each question using the school's approved
+  questions as examples and checks for duplicates; a separate validator agent
+  checks the answer key, that there is one best answer, the skill and the
+  complexity; failures are revised once. Results wait in **Needs review** for
+  a teacher to approve. The screen shows the agents' steps as they work.
+- **Suggest marks** for written answers, with a reason for each, and **draft
+  feedback**. Only once an admin turns it on in School Settings. Answers are sent
+  without names or IDs, and nothing is saved until the teacher saves it.
+
+Add `ANTHROPIC_API_KEY` on the server to use Claude. Without a key the AI
+buttons say *AI isn't set up*, except in sample mode, where a scripted
+**offline demo** runs the same steps and labels everything *Offline demo · not
+real AI*. See [`server/README.md`](server/README.md#the-ai-assistant-ai).
 
 ## Putting it on a server
 
@@ -116,7 +146,7 @@ deploy/     Production: app Dockerfile, Docker Compose with Caddy (HTTPS), backu
 | `pnpm db:up` / `db:down` / `db:indexes` / `db:shell` / `db:logs` / `db:backup` | MongoDB |
 | `pnpm admin:create` | Create an administrator (`--reset-password` for a locked-out admin) |
 | `pnpm db:starter-items` | Load 28 starter questions (pending teacher approval) |
-| `pnpm demo:setup` / `demo:code` | Build a demo school on an empty test install / print its staff 2FA codes (see docs/DEMO.md) |
+| `pnpm sample:school` | Build the sample school on an empty test install (see docs/DEMO.md) |
 | `pnpm fabric:up` / `fabric:down` / `fabric:status` / `fabric:clean` | Hyperledger Fabric network |
 | `pnpm ledger:sync` | Write pending skill coins to the ledger now (the app also does this automatically) |
 | `pnpm ledger:verify` | Audit the ledger against the database (read-only) |

@@ -54,6 +54,8 @@ const userSchema = new Schema(
     lockedUntil: { type: Date },
     publicKeys: { type: [publicKeySchema], default: [] },
     status: { type: String, enum: USER_STATUSES, default: "active" },
+    /** Sample-school account (simple password, no 2FA). Only usable while SAMPLE_SCHOOL is on. */
+    sample: { type: Boolean, default: false },
     lastLoginAt: { type: Date },
   },
   {

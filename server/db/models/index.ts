@@ -1,4 +1,5 @@
 import { AchievementModel } from "./achievement";
+import { AiJobModel } from "./ai-job";
 import { AssessmentAttemptModel } from "./assessment-attempt";
 import { AssessmentItemModel } from "./assessment-item";
 import { AssessmentTemplateModel } from "./assessment-template";
@@ -13,6 +14,7 @@ import { VerificationLinkModel } from "./verification-link";
 import { WalletEventModel } from "./wallet-event";
 
 export * from "./achievement";
+export * from "./ai-job";
 export * from "./assessment-attempt";
 export * from "./assessment-item";
 export * from "./assessment-template";
@@ -41,4 +43,5 @@ export const allModels = [
   AuditLogModel,
   SchoolModel,
   SessionModel,
+  AiJobModel,
 ] as const;

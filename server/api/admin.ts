@@ -22,6 +22,7 @@ import { hashPassword } from "../security/password";
 import { syncLedgerSoon } from "../assessment/coins";
 import { ApiError } from "./data";
 import { formatCode, newWalletId, staffCodeInfo } from "./signup";
+import { aiStatus } from "../ai/provider";
 import { formatDate, formatTimestamp } from "./format";
 
 export const adminRoutes = Router();
@@ -134,9 +135,11 @@ adminRoutes.get("/admin/school", ...admin, async (_req, res) => {
           academicYear: school.academicYear ?? new Date().getFullYear(),
           term: school.term ?? 1,
           walletPrefix: school.walletPrefix ?? "DSW",
+          aiMarkingEnabled: Boolean(school.aiMarkingEnabled),
         }
       : null,
     ...(await staffCodeInfo()),
+    ai: aiStatus(),
   });
 });
 
@@ -152,6 +155,7 @@ adminRoutes.put("/admin/school", ...admin, async (req, res) => {
     academicYear: optionalInt(body.academicYear, "Academic year", 2000, 2100),
     term: optionalInt(body.term, "Term", 1, 4),
     walletPrefix: (text(body.walletPrefix, "Wallet prefix", { max: 6 }) ?? "DSW").toUpperCase(),
+    aiMarkingEnabled: Boolean(body.aiMarkingEnabled),
   };
   if (!/^[A-Z]{2,6}$/.test(fields.walletPrefix)) throw new ApiError(400, "invalid_field", "Wallet prefix must be 2 to 6 letters");
   if (fields.contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fields.contactEmail)) throw new ApiError(400, "invalid_field", "Contact email isn't valid");

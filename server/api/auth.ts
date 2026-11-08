@@ -3,7 +3,7 @@ import { Router, type Request } from "express";
 import QRCode from "qrcode";
 import { UserModel, appendAuditLog, currentSchool, type UserDocument } from "../db/models";
 import { rateLimit } from "../auth/rate-limit";
-import { currentUser, endAllSessions, endSession, requireAuth, setupRequired, startSession } from "../auth/session";
+import { currentUser, endAllSessions, endSession, isSampleUser, requireAuth, sampleModeEnabled, setupRequired, startSession } from "../auth/session";
 import { hashPassword, verifyPassword } from "../security/password";
 import { decryptSecret, encryptSecret } from "../security/secrets";
 import { generateTotpSecret, totpUri, verifyTotp } from "../security/totp";
@@ -29,6 +29,7 @@ export function publicUser(user: UserDocument) {
     twoFactorRequired: user.role !== "student",
     mustChangePassword: Boolean(user.mustChangePassword),
     setupRequired: setupRequired(user),
+    sample: isSampleUser(user),
   };
 }
 
@@ -88,13 +89,17 @@ authRoutes.post(
     await audit(req, user, "auth.login", "failure", { reason: user ? "wrong password" : "unknown email" });
     throw new ApiError(401, "invalid_credentials", "Email or password is incorrect");
   }
+  if (user.sample && !sampleModeEnabled()) {
+    await audit(req, user, "auth.login", "failure", { reason: "sample accounts switched off" });
+    throw new ApiError(403, "sample_disabled", "Sample accounts are switched off on this server.");
+  }
   if (user.status !== "active") {
     await audit(req, user, "auth.login", "failure", { reason: "account deactivated" });
     throw new ApiError(403, "account_deactivated", "This account has been deactivated. Contact your school administrator.");
   }
 
   await UserModel.updateOne({ _id: user._id }, { $set: { failedLogins: 0 }, $unset: { lockedUntil: "" } });
-  const needsCode = Boolean(user.twoFactor?.enabled);
+  const needsCode = Boolean(user.twoFactor?.enabled) && !isSampleUser(user);
   await startSession(req, res, user, needsCode);
   if (!needsCode) {
     await UserModel.updateOne({ _id: user._id }, { $set: { lastLoginAt: new Date() } });

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { Page } from '../types';
 import { apiSend, ApiRequestError, useApiData } from '../lib/api';
-import { Alert, Badge, Button, Card, EmptyState, Field, Input, PageHeader, PageStatus, Textarea } from '../components/ui';
+import { AiSuggestion, Alert, Badge, Button, Card, EmptyState, Field, Input, PageHeader, PageStatus, Textarea } from '../components/ui';
+import { AI_OFF_MESSAGE, useAiStatus } from '../lib/ai';
 
 interface Props { setPage: (p: Page) => void; }
 
@@ -57,6 +58,46 @@ function MarkingPanel({ id, onClose, onSaved }: { id: string; onClose: () => voi
   const sub = useApiData<Submission | null>(`/marking/${id}`, null);
   const [marks, setMarks] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState('');
+  const ai = useAiStatus();
+  const [aiMarks, setAiMarks] = useState<Record<string, { points: number; rationale: string; confidence: string }>>({});
+  const [aiFeedback, setAiFeedback] = useState<string | null>(null);
+  const [aiBusy, setAiBusy] = useState<'marks' | 'feedback' | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const aiBlocked = !ai.ready ? 'Checking AI…' : ai.data.mode === 'off' ? AI_OFF_MESSAGE : !ai.data.markingEnabled ? 'AI marking help is turned off. An administrator can turn it on in School Settings.' : null;
+
+  const suggestMarks = async (id: string) => {
+    setAiBusy('marks');
+    setAiError(null);
+    try {
+      const result = await apiSend<{ suggestions: { itemId: string; points: number; rationale: string; confidence: string }[] }>('POST', `/marking/${id}/ai-suggest`);
+      const byId = Object.fromEntries(result.suggestions.map((x) => [x.itemId, x]));
+      setAiMarks(byId);
+      // Fill only the marks the teacher hasn't entered yet; they can change any of them.
+      setMarks((current) => {
+        const next = { ...current };
+        for (const x of result.suggestions) if (next[x.itemId] === '' || next[x.itemId] === undefined) next[x.itemId] = String(x.points);
+        return next;
+      });
+    } catch (err) {
+      setAiError(err instanceof ApiRequestError ? err.message : 'The AI request failed');
+    } finally {
+      setAiBusy(null);
+    }
+  };
+
+  const suggestFeedback = async (id: string) => {
+    setAiBusy('feedback');
+    setAiError(null);
+    try {
+      const result = await apiSend<{ feedback: string }>('POST', `/marking/${id}/ai-feedback`);
+      setAiFeedback(result.feedback);
+      setFeedback((current) => (current.trim() ? current : result.feedback));
+    } catch (err) {
+      setAiError(err instanceof ApiRequestError ? err.message : 'The AI request failed');
+    } finally {
+      setAiBusy(null);
+    }
+  };
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'green' | 'red'; text: string } | null>(null);
 
@@ -104,6 +145,19 @@ function MarkingPanel({ id, onClose, onSaved }: { id: string; onClose: () => voi
       />
       {notice && <div className="mb-4"><Alert tone={notice.tone}>{notice.text}</Alert></div>}
       {released && <div className="mb-4"><Alert tone="blue">This result has been released to the student, so the marks are final.</Alert></div>}
+      {!released && d.questions.some((q) => q.type === 'short_response') && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-violet-100 bg-violet-50/50 px-4 py-3">
+          <span className="text-sm text-violet-900 font-body mr-auto">AI can suggest marks against the marking guide and draft feedback. You decide what&apos;s saved.</span>
+          <span title={aiBlocked ?? undefined}>
+            <Button variant="secondary" busy={aiBusy === 'marks'} disabled={Boolean(aiBlocked) || aiBusy !== null} onClick={() => suggestMarks(d.id)}>✦ Suggest marks with AI</Button>
+          </span>
+          <span title={aiBlocked ?? undefined}>
+            <Button variant="secondary" busy={aiBusy === 'feedback'} disabled={Boolean(aiBlocked) || aiBusy !== null} onClick={() => suggestFeedback(d.id)}>✦ Draft feedback with AI</Button>
+          </span>
+          {ai.ready && ai.data.mode === 'offline' && <span className="w-full text-[11px] text-amber-800 font-body">Offline demo: suggestions come from a scripted stand-in, not a real AI model.</span>}
+        </div>
+      )}
+      {aiError && <div className="mb-4"><Alert>{aiError}</Alert></div>}
       <div className="space-y-4">
         {d.questions.map((q) => (
           <Card key={q.itemId}>
@@ -143,9 +197,16 @@ function MarkingPanel({ id, onClose, onSaved }: { id: string; onClose: () => voi
                     disabled={released}
                     value={marks[q.itemId] ?? ''}
                     onChange={(e) => setMarks({ ...marks, [q.itemId]: e.target.value })}
-                    className="max-w-[120px]"
+                    className={`max-w-[120px] ${aiMarks[q.itemId] && marks[q.itemId] === String(aiMarks[q.itemId].points) ? '!border-violet-300 !bg-violet-50/50' : ''}`}
                   />
                 </Field>
+                {aiMarks[q.itemId] && !released && (
+                  <div className="md:col-span-2">
+                    <AiSuggestion onAccept={() => setMarks({ ...marks, [q.itemId]: String(aiMarks[q.itemId].points) })} acceptLabel={`Use ${aiMarks[q.itemId].points}/${q.maxPoints}`}>
+                      <strong>{aiMarks[q.itemId].points}/{q.maxPoints}</strong> ({aiMarks[q.itemId].confidence} confidence). {aiMarks[q.itemId].rationale}
+                    </AiSuggestion>
+                  </div>
+                )}
               </div>
             )}
             {q.type === 'multiple_choice' && <div className="text-xs text-gray-500 font-body mt-2">Marked automatically: {q.points ?? 0}/{q.maxPoints}</div>}
@@ -155,6 +216,11 @@ function MarkingPanel({ id, onClose, onSaved }: { id: string; onClose: () => voi
           <Field label="Feedback for the student (optional)">
             <Textarea disabled={released} value={feedback} onChange={(e) => setFeedback(e.target.value)} rows={3} />
           </Field>
+          {aiFeedback && !released && feedback !== aiFeedback && (
+            <div className="mt-2">
+              <AiSuggestion onAccept={() => setFeedback(aiFeedback)} acceptLabel="Use this draft">{aiFeedback}</AiSuggestion>
+            </div>
+          )}
           {!released && (
             <div className="flex flex-wrap gap-2 mt-4">
               <Button variant="secondary" busy={busy} onClick={() => save(false)}>Save marks</Button>

@@ -19,6 +19,8 @@ const schoolSchema = new Schema(
     /** Staff sign-up code (encrypted with server/security/secrets.ts). Anyone with it can create a teacher account. */
     staffCode: { type: String, select: false },
     staffCodeEnabled: { type: Boolean, default: false },
+    /** Let the AI suggest marks and draft feedback (it sees anonymised student answers). Off by default. */
+    aiMarkingEnabled: { type: Boolean, default: false },
   },
   { timestamps: true, collection: "school" },
 );

@@ -14,6 +14,8 @@ export interface SessionUser {
   twoFactorRequired: boolean;
   mustChangePassword: boolean;
   setupRequired: boolean;
+  /** Sample-school account (simple password, no 2FA). */
+  sample?: boolean;
 }
 
 export interface SchoolInfo {

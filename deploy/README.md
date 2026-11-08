@@ -68,6 +68,8 @@ nano deploy/.env
 | `APP_SECRET` | Output of `openssl rand -hex 32`. Keep a copy in your password manager. |
 | `MONGODB_URI` | Use the app username and password from `mongodb/.env`, with host `mongodb` |
 | `APP_UID` / `APP_GID` | Output of `id -u` and `id -g` (the user who ran `fabric:up`) |
+| `ANTHROPIC_API_KEY` | Optional: turns on the AI assistant (see section 9). Leave it out and the AI buttons say *AI isn't set up*. |
+| `SAMPLE_SCHOOL` | Leave it out (off). Only for a server that exists to show the sample school. |
 
 Then build and start:
 
@@ -149,6 +151,41 @@ match. Add `--probe` to also confirm that Kanavoogle can't issue coins.
 Skill coins are written to the ledger automatically when results are
 released, and retried every 5 minutes if the network was unavailable.
 Administrators can see the status of each coin under **Skill Coins**.
+
+## 9. The AI assistant (optional)
+
+With `ANTHROPIC_API_KEY` in `deploy/.env` (then `up -d` again), teachers get:
+
+- **✦ Generate with AI** in the Question Bank, and **✦ Draft the missing
+  questions** on a template: an author agent drafts questions using the
+  school's approved ones as examples, a separate validator agent checks each
+  one, and failures are revised once. They arrive as **Needs review** (or as
+  drafts if they still fail): nothing is used until a teacher approves it.
+- **✦ Suggest marks** and **✦ Draft feedback** in Marking & Release, but only
+  once an administrator turns on **School Settings → AI assistant → Let
+  teachers use AI when marking**. Written answers are then sent to the AI
+  provider (Anthropic) with no name, email or wallet ID. The teacher still
+  decides every mark, and nothing is saved until they save it.
+
+The key stays on the server; browsers never see it. Each request is in the
+audit log. Limits: `AI_DAILY_JOBS` (question-generation runs per teacher per
+day, default 20) and `AI_MAX_ITEMS_PER_JOB` (default 10). `AI_MODEL` picks the
+model. The app needs outbound HTTPS to `api.anthropic.com`.
+
+## 10. A sample school (demo servers only)
+
+For a server that exists only to show the product: set `SAMPLE_SCHOOL=on` in
+`deploy/.env`, start the app on an empty database, then
+
+```bash
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec app \
+  node_modules/.bin/tsx server/scripts/sample-school.ts --i-understand
+```
+
+The sample accounts (`admin@`, `teacher@` and `student@sample.school`) use
+`password123` and skip 2FA, and the sign-in page shows one-click buttons for
+them. They stop working as soon as `SAMPLE_SCHOOL` is removed. **Never turn
+this on for a real school.** See `docs/DEMO.md`.
 
 ## Updating
 

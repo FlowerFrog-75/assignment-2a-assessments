@@ -2,7 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import type { Page } from '../types';
 import { apiSend, ApiRequestError, useApiData } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { Alert, Button, Card, copyText, Field, Input, PageHeader, PageStatus, Select } from '../components/ui';
+import { Alert, Badge, Button, Card, copyText, Field, Input, PageHeader, PageStatus, Select } from '../components/ui';
+import type { AiStatus } from '../lib/ai';
 
 interface Props { setPage: (p: Page) => void; }
 
@@ -15,14 +16,23 @@ interface School {
   academicYear: number;
   term: number;
   walletPrefix: string;
+  aiMarkingEnabled: boolean;
 }
 
-const blank: School = { name: '', shortName: '', address: '', contactEmail: '', timezone: 'Australia/Brisbane', academicYear: new Date().getFullYear(), term: 1, walletPrefix: 'DSW' };
+const blank: School = { name: '', shortName: '', address: '', contactEmail: '', timezone: 'Australia/Brisbane', academicYear: new Date().getFullYear(), term: 1, walletPrefix: 'DSW', aiMarkingEnabled: false };
 const TIMEZONES = ['Australia/Brisbane', 'Australia/Sydney', 'Australia/Melbourne', 'Australia/Hobart', 'Australia/Adelaide', 'Australia/Darwin', 'Australia/Perth', 'Pacific/Auckland'];
 
 export default function AdminSchool(_: Props) {
   const { refresh } = useAuth();
-  const loaded = useApiData<{ school: School | null; staffCode: string | null; staffCodeEnabled: boolean }>('/admin/school', { school: { ...blank, name: 'Northview Secondary College' }, staffCode: 'K7Q2-M9XD-4PLA', staffCodeEnabled: true });
+  const loaded = useApiData<{ school: School | null; staffCode: string | null; staffCodeEnabled: boolean; ai: Omit<AiStatus, 'markingEnabled'> }>('/admin/school', {
+    school: { ...blank, name: 'Northview Secondary College', aiMarkingEnabled: true },
+    staffCode: 'K7Q2-M9XD-4PLA',
+    staffCodeEnabled: true,
+    ai: { mode: 'offline', model: 'offline-demo', label: 'Offline demo (not real AI)' },
+  });
+  // The last saved settings, so the AI switch can save on its own without saving half-finished edits in the form.
+  const [saved, setSaved] = useState<School | null>(null);
+  const [aiMessage, setAiMessage] = useState<string | null>(null);
   const [staff, setStaff] = useState<{ staffCode: string | null; staffCodeEnabled: boolean }>({ staffCode: null, staffCodeEnabled: false });
   const [staffMessage, setStaffMessage] = useState<string | null>(null);
   const [form, setForm] = useState<School>(blank);
@@ -32,6 +42,7 @@ export default function AdminSchool(_: Props) {
   useEffect(() => {
     if (loaded.ready) {
       setForm(loaded.data.school ?? blank);
+      setSaved(loaded.data.school);
       setStaff({ staffCode: loaded.data.staffCode, staffCodeEnabled: loaded.data.staffCodeEnabled });
     }
   }, [loaded.ready, loaded.data]);
@@ -46,6 +57,19 @@ export default function AdminSchool(_: Props) {
     }
   };
 
+  const setAiMarking = async (enabled: boolean) => {
+    if (!saved) return;
+    setAiMessage(null);
+    try {
+      await apiSend('PUT', '/admin/school', { ...saved, aiMarkingEnabled: enabled });
+      setSaved({ ...saved, aiMarkingEnabled: enabled });
+      setForm((current) => ({ ...current, aiMarkingEnabled: enabled }));
+      setAiMessage(enabled ? 'AI marking help is on.' : 'AI marking help is off.');
+    } catch (err) {
+      setAiMessage(err instanceof ApiRequestError ? err.message : 'That didn’t work');
+    }
+  };
+
   if (!loaded.ready) return <PageStatus error={loaded.error} onRetry={loaded.reload} />;
   const set = (key: keyof School) => (e: { target: { value: string } }) => setForm({ ...form, [key]: e.target.value });
 
@@ -55,6 +79,7 @@ export default function AdminSchool(_: Props) {
     setMessage(null);
     try {
       await apiSend('PUT', '/admin/school', form);
+      setSaved(form);
       await refresh();
       setMessage({ tone: 'green', text: 'School settings saved.' });
     } catch (err) {
@@ -122,6 +147,52 @@ export default function AdminSchool(_: Props) {
           </Button>
         )}
         {staffMessage && <p className="text-xs text-gray-500 font-body mt-2" aria-live="polite">{staffMessage}</p>}
+      </Card>
+      <Card className="mt-6">
+        <div className="flex flex-wrap items-center gap-2 mb-1">
+          <h2 className="font-display font-semibold text-gray-900">AI assistant</h2>
+          {loaded.data.ai.mode === 'claude' && <Badge tone="purple">On · {loaded.data.ai.label}</Badge>}
+          {loaded.data.ai.mode === 'offline' && <Badge tone="amber">Offline demo · not real AI</Badge>}
+          {loaded.data.ai.mode === 'off' && <Badge>Not set up</Badge>}
+        </div>
+        <p className="text-sm text-gray-500 font-body mb-4">
+          Teachers can ask the AI to draft new questions (a second AI checks each one), suggest marks for written answers and draft feedback.
+          Everything the AI makes waits for a teacher: questions must be approved and marks are only saved when a teacher saves them.
+        </p>
+        {loaded.data.ai.mode === 'off' && (
+          <div className="mb-4">
+            <Alert tone="amber">
+              To turn the AI on, add <code>ANTHROPIC_API_KEY</code> to the server&apos;s environment (<code>deploy/.env</code> in production) and restart the API.
+              The key stays on the server; it is never sent to browsers.
+            </Alert>
+          </div>
+        )}
+        {loaded.data.ai.mode === 'offline' && (
+          <div className="mb-4">
+            <Alert tone="amber">
+              This server is running a scripted stand-in so the AI screens can be shown without an API key. Its questions and suggestions are not from a real AI model.
+              Add <code>ANTHROPIC_API_KEY</code> on the server for the real thing.
+            </Alert>
+          </div>
+        )}
+        <label className="flex items-start gap-3 rounded-xl border border-[#E8EAF0] px-4 py-3">
+          <input
+            type="checkbox"
+            className="mt-1 h-4 w-4 accent-violet-600"
+            disabled={!saved}
+            checked={Boolean(saved?.aiMarkingEnabled)}
+            onChange={(e) => setAiMarking(e.target.checked)}
+          />
+          <span>
+            <span className="block text-sm font-semibold text-gray-900 font-body">Let teachers use AI when marking</span>
+            <span className="block text-xs text-gray-500 font-body mt-0.5">
+              Students&apos; written answers are sent to the AI provider (Anthropic) without names, emails or wallet IDs. Check this fits your school&apos;s privacy policy
+              and tell families before turning it on.
+            </span>
+          </span>
+        </label>
+        {!saved && <p className="text-xs text-gray-500 font-body mt-2">Save the school settings first.</p>}
+        {aiMessage && <p className="text-xs text-gray-500 font-body mt-2" aria-live="polite">{aiMessage}</p>}
       </Card>
       <Card className="mt-6">
         <h2 className="font-display font-semibold text-gray-900 mb-2">Blockchain identity</h2>

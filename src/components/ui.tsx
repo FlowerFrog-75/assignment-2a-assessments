@@ -215,3 +215,73 @@ export const SKILL_OPTIONS = [
 ] as const;
 
 export const skillLabel = (key: string) => SKILL_OPTIONS.find((s) => s.key === key)?.label ?? key;
+
+// ------------------------------------------------------------ AI patterns
+// One visual language for anything the AI touched: a violet accent, a clear
+// label of where it came from, and the teacher always in control.
+
+/** Where a question came from, so AI work is never mistaken for a teacher's. */
+export function AiBadge({ model, passed }: { model?: string | null; passed?: boolean | null }) {
+  if (model === 'offline-demo') {
+    return (
+      <span title="Made by the offline stand-in, not a real AI model" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold font-body whitespace-nowrap bg-amber-50 text-amber-800 border border-amber-200">
+        ✦ Offline demo · not real AI{passed === false ? ' · failed review' : ''}
+      </span>
+    );
+  }
+  return (
+    <span title={model ? `Drafted by ${model}` : 'Drafted by AI'} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold font-body whitespace-nowrap bg-violet-50 text-violet-700 border border-violet-200">
+      ✦ AI-drafted{passed === true ? ' · passed review' : passed === false ? ' · failed review' : ''}
+    </span>
+  );
+}
+
+export interface AgentStep {
+  at: string;
+  actor: 'author' | 'validator' | 'system';
+  text: string;
+}
+
+const ACTOR_STYLE: Record<AgentStep['actor'], { label: string; chip: string }> = {
+  author: { label: 'Author agent', chip: 'bg-violet-100 text-violet-800' },
+  validator: { label: 'Validator agent', chip: 'bg-sky-100 text-sky-800' },
+  system: { label: 'App', chip: 'bg-gray-100 text-gray-700' },
+};
+
+/** The agents' steps as they happen, so teachers can see how each question was made and checked. */
+export function AgentTimeline({ steps, running }: { steps: AgentStep[]; running: boolean }) {
+  return (
+    <ol className="space-y-2 font-body" aria-live="polite">
+      {steps.map((step, i) => (
+        <li key={i} className="grid gap-3 items-start" style={{ gridTemplateColumns: '7.5rem 1fr 3.5rem' }}>
+          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full text-center ${ACTOR_STYLE[step.actor].chip}`}>{ACTOR_STYLE[step.actor].label}</span>
+          <span className="text-sm text-gray-800 leading-snug">{step.text}</span>
+          <span className="text-[11px] text-gray-400 text-right tabular-nums">{new Date(step.at).toLocaleTimeString([], { minute: '2-digit', second: '2-digit' })}</span>
+        </li>
+      ))}
+      {running && (
+        <li className="flex items-center gap-2 text-sm text-gray-500 pl-1">
+          <span className="w-3.5 h-3.5 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+          Working…
+        </li>
+      )}
+    </ol>
+  );
+}
+
+/** A suggestion from the AI that the teacher can accept or ignore. Nothing is saved until they do. */
+export function AiSuggestion({ children, onAccept, acceptLabel = 'Use this' }: { children: ReactNode; onAccept?: () => void; acceptLabel?: string }) {
+  return (
+    <div className="rounded-xl border border-violet-200 bg-violet-50/60 px-3 py-2.5 text-sm font-body">
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <span className="text-[11px] font-semibold text-violet-700">✦ Suggested by AI · check before saving</span>
+        {onAccept && (
+          <button type="button" onClick={onAccept} className="text-xs font-semibold text-violet-700 hover:text-violet-900">
+            {acceptLabel}
+          </button>
+        )}
+      </div>
+      <div className="text-gray-700">{children}</div>
+    </div>
+  );
+}

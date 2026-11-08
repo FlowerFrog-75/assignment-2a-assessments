@@ -24,5 +24,3 @@ dist/
 /.backups/
 deploy/.env
 
-# demo accounts made by pnpm demo:setup (passwords and 2FA secrets)
-/demo-accounts.*

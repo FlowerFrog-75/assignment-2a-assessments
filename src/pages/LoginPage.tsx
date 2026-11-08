@@ -27,6 +27,8 @@ export default function LoginPage({ setPage }: LoginPageProps) {
   const [showHelp, setShowHelp] = useState(false);
   const [view, setView] = useState<'signin' | 'signup' | 'setup'>(() => (joinCodeFromPath() ? 'signup' : 'signin'));
   const [setupRequired, setSetupRequired] = useState(false);
+  const [sample, setSample] = useState<{ password: string; accounts: { role: UserRole; name: string; email: string }[] } | null>(null);
+  const [sampleBusy, setSampleBusy] = useState<string | null>(null);
   const offline = state.status === 'signed-out' && state.offline;
 
   // A brand-new installation has no administrator yet: offer first-time setup.
@@ -34,7 +36,8 @@ export default function LoginPage({ setPage }: LoginPageProps) {
     if (offline) return;
     fetch('/api/signup/status', { headers: { Accept: 'application/json' } })
       .then((r) => (r.ok ? r.json() : null))
-      .then((status: { setupRequired: boolean } | null) => {
+      .then((status: { setupRequired: boolean; sample?: typeof sample } | null) => {
+        if (status?.sample) setSample(status.sample);
         if (status?.setupRequired) {
           setSetupRequired(true);
           setView('setup');
@@ -42,6 +45,20 @@ export default function LoginPage({ setPage }: LoginPageProps) {
       })
       .catch(() => undefined);
   }, [offline]);
+
+  /** One click: sign in as a sample-school account (no 2FA). */
+  const signInAsSample = async (account: { email: string }) => {
+    if (!sample) return;
+    setSampleBusy(account.email);
+    setError(null);
+    try {
+      await apiSend('POST', '/auth/login', { email: account.email, password: sample.password });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Sign-in failed');
+      setSampleBusy(null);
+    }
+  };
 
   const leaveJoinLink = () => {
     if (joinCodeFromPath()) window.history.replaceState(null, '', '/');
@@ -131,6 +148,30 @@ export default function LoginPage({ setPage }: LoginPageProps) {
       {/* Right panel */}
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
+          {sample && view === 'signin' && step === 'password' && (
+            <section aria-labelledby="sample-school" className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-5">
+              <div className="flex items-baseline justify-between gap-3 mb-3">
+                <h2 id="sample-school" className="font-display font-semibold text-amber-900">Try the sample school</h2>
+                <span className="text-[11px] text-amber-700 font-body">Sample data, not for real use</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {sample.accounts.map((account) => (
+                  <button
+                    key={account.email}
+                    onClick={() => signInAsSample(account)}
+                    disabled={sampleBusy !== null}
+                    className="rounded-xl bg-white border border-amber-200 hover:border-amber-400 hover:bg-amber-100/40 px-3 py-2.5 text-left transition-colors disabled:opacity-60"
+                  >
+                    <span className="block text-sm font-semibold text-gray-900 font-body capitalize">{sampleBusy === account.email ? 'Signing in…' : account.role}</span>
+                    <span className="block text-[11px] text-gray-500 font-body truncate">{account.name}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-amber-800 font-body mt-3">
+                Or type an email such as <code>{sample.accounts[0]?.email}</code> with the password <code>{sample.password}</code>. No 2FA for sample accounts.
+              </p>
+            </section>
+          )}
           <div className="bg-white rounded-2xl shadow-sm border border-[#E8EAF0] p-8">
             {view === 'setup' ? (
               <SetupPanel onCancel={setupRequired ? undefined : () => setView('signin')} />

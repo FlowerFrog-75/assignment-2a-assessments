@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import type { Page } from '../types';
 import { apiSend, ApiRequestError, useApiData } from '../lib/api';
-import { Alert, Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, PageStatus, Select, SKILL_OPTIONS, Textarea } from '../components/ui';
+import { AiBadge, Alert, Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, PageStatus, Select, SKILL_OPTIONS, Textarea } from '../components/ui';
+import { AgentRun, GenerateQuestionsModal } from '../components/AiQuestionGenerator';
+import { AI_OFF_MESSAGE, useAiStatus } from '../lib/ai';
 
 interface Props { setPage: (p: Page) => void; }
 
@@ -21,6 +23,7 @@ interface Item {
   createdBy: string;
   reviewedBy: string;
   reviewComments: string;
+  ai?: { model: string | null; passed: boolean | null; notes: string } | null;
   updated: string;
   inUse: boolean;
 }
@@ -168,8 +171,12 @@ export default function ItemBank(_: Props) {
   const [comments, setComments] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'green' | 'red'; text: string } | null>(null);
+  const ai = useAiStatus();
+  const [generating, setGenerating] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
 
   if (!items.ready && !items.error) return <PageStatus error={null} />;
+  const aiOff = ai.ready && ai.data.mode === 'off';
   const d = items.data;
 
   const review = async (item: Item, decision: 'approve' | 'reject') => {
@@ -204,7 +211,14 @@ export default function ItemBank(_: Props) {
         accent="emerald"
         title="Question bank"
         subtitle="Questions must be approved by a teacher before the assessment engine can put them on a paper."
-        actions={<Button accent="emerald" onClick={() => setEditing('new')}>+ New question</Button>}
+        actions={
+          <>
+            <span title={aiOff ? AI_OFF_MESSAGE : undefined}>
+              <Button className="!bg-violet-600 hover:!bg-violet-700" disabled={!ai.ready || aiOff} onClick={() => setGenerating(true)}>✦ Generate with AI</Button>
+            </span>
+            <Button accent="emerald" onClick={() => setEditing('new')}>+ New question</Button>
+          </>
+        }
       />
       <div className="flex flex-wrap gap-2 mb-4">
         {[['', 'All'], ['pending_review', 'Needs review'], ['approved', 'Approved'], ['rejected', 'Rejected'], ['retired', 'Retired']].map(([value, label]) => (
@@ -246,10 +260,15 @@ export default function ItemBank(_: Props) {
                 <Badge>{item.subject}</Badge>
                 <Badge>{COMPLEXITY[item.complexity]}</Badge>
                 <Badge>{item.type === 'multiple_choice' ? 'Multiple choice' : 'Short response'} · {item.points} mark{item.points === 1 ? '' : 's'}</Badge>
-                {item.source === 'ai' && <Badge tone="blue">AI-drafted</Badge>}
+                {item.source === 'ai' && <AiBadge model={item.ai?.model} passed={item.ai?.passed} />}
                 {item.inUse && <Badge tone="blue">Used in papers</Badge>}
               </div>
               <p className="text-sm text-gray-900 font-body mb-2 whitespace-pre-wrap">{item.prompt}</p>
+              {item.ai?.notes && (
+                <p className={`text-xs font-body mb-2 px-3 py-2 rounded-lg ${item.ai.passed ? 'bg-violet-50/60 text-violet-900' : 'bg-amber-50 text-amber-900'}`}>
+                  <strong>Validator agent:</strong> {item.ai.notes}
+                </p>
+              )}
               {item.type === 'multiple_choice' ? (
                 <ul className="text-sm font-body space-y-0.5 mb-2">
                   {item.options.map((o) => (
@@ -263,7 +282,7 @@ export default function ItemBank(_: Props) {
               )}
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="text-xs text-gray-400 font-body">
-                  {item.createdBy ? `Added by ${item.createdBy}` : 'Starter question'} · updated {item.updated}
+                  {item.source === 'ai' ? `Drafted by AI${item.createdBy ? ` for ${item.createdBy}` : ''}` : item.createdBy ? `Added by ${item.createdBy}` : 'Starter question'} · updated {item.updated}
                   {item.reviewedBy && ` · reviewed by ${item.reviewedBy}`}
                   {item.reviewComments && ` · “${item.reviewComments}”`}
                 </div>
@@ -315,9 +334,40 @@ export default function ItemBank(_: Props) {
               <div><strong>Marking guide:</strong> {reviewing.answer.rubric || '—'}</div>
             </div>
           )}
-          <p className="text-xs text-gray-500 font-body mb-3">Check that the question is accurate, fair and age-appropriate, that it really tests <strong>{reviewing.skillLabel}</strong>, and that the answer is right.</p>
+          {reviewing.ai?.notes && (
+            <div className="mb-3 rounded-xl border border-violet-200 bg-violet-50/60 px-3 py-2 text-xs font-body text-violet-900">
+              <div className="flex items-center gap-2 mb-1"><AiBadge model={reviewing.ai.model} passed={reviewing.ai.passed} /></div>
+              <strong>Validator agent&apos;s review:</strong> {reviewing.ai.notes}
+            </div>
+          )}
+          <p className="text-xs text-gray-500 font-body mb-3">Check that the question is accurate, fair and age-appropriate, that it really tests <strong>{reviewing.skillLabel}</strong>, and that the answer is right.{reviewing.source === 'ai' ? ' The AI has checked it, but you make the decision.' : ''}</p>
           <Field label="Comments (optional)"><Textarea value={comments} onChange={(e) => setComments(e.target.value)} rows={2} /></Field>
         </Modal>
+      )}
+      {generating && ai.ready && (
+        <GenerateQuestionsModal
+          status={ai.data}
+          subjects={d.subjects}
+          onClose={() => setGenerating(false)}
+          onStarted={(id) => {
+            setGenerating(false);
+            setJobId(id);
+          }}
+        />
+      )}
+      {jobId && (
+        <AgentRun
+          jobId={jobId}
+          onClose={() => {
+            setJobId(null);
+            items.reload();
+          }}
+          onReview={() => {
+            setJobId(null);
+            setStatus('pending_review');
+            items.reload();
+          }}
+        />
       )}
     </div>
   );
