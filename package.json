@@ -18,6 +18,8 @@
     "db:shell": "docker compose -f mongodb/docker-compose.yml exec mongodb sh -c 'mongosh -u \"$MONGO_APP_USERNAME\" -p \"$MONGO_APP_PASSWORD\" --authenticationDatabase \"$MONGO_APP_DB\" \"$MONGO_APP_DB\"'",
     "db:starter-items": "tsx server/scripts/starter-items.ts",
     "admin:create": "tsx server/scripts/create-admin.ts",
+    "demo:setup": "tsx server/scripts/demo-setup.ts",
+    "demo:code": "tsx server/scripts/demo-code.ts",
     "db:indexes": "tsx server/scripts/db-indexes.ts",
     "db:backup": "bash mongodb/backup.sh",
     "fabric:up": "bash fabric/network.sh up",

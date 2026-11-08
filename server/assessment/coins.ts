@@ -76,6 +76,7 @@ let queued = false;
 
 /** Sends pending wallet events to the ledger in the background. Never throws. */
 export function syncLedgerSoon(): void {
+  if (process.env.LEDGER_SYNC === "off") return; // synced by hand with `pnpm ledger:sync`
   if (running) {
     queued = true;
     return;

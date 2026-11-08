@@ -22,6 +22,15 @@ Everything runs on your own machines. Nothing is hosted.
 | **Student** | password | Sit assessments, see results and their skills wallet, give or withdraw consent, share verified skills with a link, see who accessed their data |
 | **Employer / anyone** | nothing | Check a credential a student shared (`/verify/<code>`) |
 
+## Showing it to people
+
+**[`docs/DEMO.md`](docs/DEMO.md)** is a 15-minute run sheet for the student,
+teacher and admin views side by side. On a test machine,
+`pnpm demo:setup` builds a demo school (accounts for each role, a class with
+a few weeks of results, coins on the blockchain, and an assessment left to sit
+live), and `pnpm demo:code` prints the staff accounts' 2FA codes. It refuses
+to run on a database that already has accounts.
+
 ## Putting it on a server
 
 See **[`deploy/README.md`](deploy/README.md)**: MongoDB, the Fabric network and
@@ -107,6 +116,7 @@ deploy/     Production: app Dockerfile, Docker Compose with Caddy (HTTPS), backu
 | `pnpm db:up` / `db:down` / `db:indexes` / `db:shell` / `db:logs` / `db:backup` | MongoDB |
 | `pnpm admin:create` | Create an administrator (`--reset-password` for a locked-out admin) |
 | `pnpm db:starter-items` | Load 28 starter questions (pending teacher approval) |
+| `pnpm demo:setup` / `demo:code` | Build a demo school on an empty test install / print its staff 2FA codes (see docs/DEMO.md) |
 | `pnpm fabric:up` / `fabric:down` / `fabric:status` / `fabric:clean` | Hyperledger Fabric network |
 | `pnpm ledger:sync` | Write pending skill coins to the ledger now (the app also does this automatically) |
 | `pnpm ledger:verify` | Audit the ledger against the database (read-only) |

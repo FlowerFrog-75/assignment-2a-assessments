@@ -58,13 +58,19 @@ async function adminExists() {
   return (await UserModel.exists({ role: "admin", status: "active" })) !== null;
 }
 
-/** Called at start-up: prints a one-time setup code if there is no administrator yet. */
-export async function announceSetupCodeIfNeeded() {
+/** The one-time setup code while there is no administrator, else null. */
+export async function ensureSetupCode(): Promise<string | null> {
   if (await adminExists()) {
     setupCode = null;
-    return;
+    return null;
   }
   setupCode ??= makeCode(12);
+  return setupCode;
+}
+
+/** Called at start-up: prints a one-time setup code if there is no administrator yet. */
+export async function announceSetupCodeIfNeeded() {
+  if (!(await ensureSetupCode()) || !setupCode) return;
   console.log("");
   console.log("  ┌──────────────────────────────────────────────────────────┐");
   console.log("  │ New installation: no administrator yet.                  │");
