@@ -6,7 +6,7 @@ export type LedgerOrg = "school" | "kanavoogle";
 export const LEDGER_ORGS: Record<LedgerOrg, { mspId: string; name: string; role: string; defaultEndpoint: string }> = {
   school: {
     mspId: "SchoolMSP",
-    name: "Northview Secondary School",
+    name: "School",
     role: "Issues and revokes skill coins. Runs a peer and its own copy of the chaincode.",
     defaultEndpoint: "localhost:7051",
   },

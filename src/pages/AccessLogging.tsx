@@ -2,6 +2,8 @@ import { useState } from 'react';
 import type { Page } from '../types';
 import DataSourceBadge from '../components/DataSourceBadge';
 import { useApiData } from '../lib/api';
+import { useUser } from '../lib/auth';
+import { downloadCsv, PageStatus } from '../components/ui';
 
 interface Props { setPage: (p: Page) => void; }
 
@@ -43,12 +45,20 @@ const mockAudit = {
 type LogEntry = (typeof mockAudit.logs)[number];
 
 export default function AccessLogging({ setPage }: Props) {
+  const user = useUser();
   const audit = useApiData('/audit-logs', mockAudit);
-  const { logs, chain, lastUpdated } = audit.data;
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('All');
   const [filterRole, setFilterRole] = useState('All');
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
+  if (!audit.ready) return <PageStatus error={audit.error} onRetry={audit.reload} />;
+  const { logs, chain, lastUpdated } = audit.data;
+  const isStudent = user.role === 'student';
+  const exportLogs = () =>
+    downloadCsv('audit-log.csv', [
+      ['ID', 'Time', 'User', 'Role', 'Action', 'Resource', 'IP', 'Status', 'Reason', 'Hash'],
+      ...logs.map((l) => [l.id, l.time, l.user, l.role, l.action, l.resource, l.ip, l.status, l.reason ?? '', l.hash]),
+    ]);
 
   const filtered = logs.filter(l => {
     const matchSearch = l.user.toLowerCase().includes(search.toLowerCase()) ||
@@ -70,10 +80,11 @@ export default function AccessLogging({ setPage }: Props) {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
-            <span className="text-xs font-mono font-600 text-emerald-600 uppercase tracking-widest">Teacher Dashboard</span>
+            <span className="text-xs font-mono font-600 text-emerald-600 uppercase tracking-widest">{isStudent ? 'Your privacy' : user.role === 'admin' ? 'Administration' : 'Teaching'}</span>
             <DataSourceBadge source={audit.source} reason={audit.offlineReason} />
           </div>
-          <h1 className="font-display font-700 text-2xl text-gray-900">Access & Audit Logs</h1>
+          <h1 className="font-display font-700 text-2xl text-gray-900">{isStudent ? 'Who accessed my data' : user.role === 'admin' ? 'Audit log' : 'Access logs'}</h1>
+          {!isStudent && user.role === 'teacher' && <p className="text-xs text-gray-400 font-body">Your own actions, and access to records of students in your classes.</p>}
           <p className="text-sm text-gray-500 font-body mt-0.5">
             Last updated: {lastUpdated} · {logs.length} events recorded
           </p>
@@ -89,16 +100,15 @@ export default function AccessLogging({ setPage }: Props) {
           )}
         </div>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-sm font-medium font-body text-gray-600 hover:border-emerald-200 transition-all">
+          <button onClick={exportLogs} className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-sm font-medium font-body text-gray-600 hover:border-emerald-200 transition-all">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-            Export Logs
+            Export CSV
           </button>
-          <button
-            onClick={() => setPage('teacher-class')}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold font-body transition-all"
-          >
-            ← Class Results
-          </button>
+          {isStudent && (
+            <button onClick={() => setPage('privacy')} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold font-body transition-all">
+              Sharing & privacy
+            </button>
+          )}
         </div>
       </div>
 

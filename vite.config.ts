@@ -43,7 +43,7 @@ react(),
           '**/mongodb/**',
 ],
       },
-      // API server (server/index.ts, run with `pnpm server`). If it isn't
+      // API server (server/index.ts, run with `pnpm api`). If it isn't
       // running, screens fall back to their built-in demo data.
       proxy: { '/api': process.env.API_URL || 'http://localhost:4000' },
     },

@@ -1,0 +1,59 @@
+# Production: the app behind Caddy, which gets and renews an HTTPS
+# certificate automatically. MongoDB (mongodb/docker-compose.yml) and the
+# Fabric network (fabric/network.sh) run in their own containers on the same
+# server; the app joins their Docker networks.
+#
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+#
+# See deploy/README.md for the full guide.
+name: dsw-app
+
+services:
+  app:
+    build: ..
+    restart: unless-stopped
+    env_file: .env
+    # Runs as the server user that owns fabric/organizations (network.sh writes
+    # the keys as that user), so the app can read the school's signing key.
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    environment:
+      NODE_ENV: production
+      API_PORT: "4000"
+      TRUST_PROXY: "1"
+      FABRIC_ORGANIZATIONS_DIR: /fabric/organizations
+      FABRIC_SCHOOL_PEER_ENDPOINT: peer0.school.dsw.example:7051
+      FABRIC_KANAVOOGLE_PEER_ENDPOINT: peer0.kanavoogle.dsw.example:7051
+    volumes:
+      # The school's (and Kanavoogle's) Fabric certificates and keys, read-only.
+      - ../fabric/organizations:/fabric/organizations:ro
+    networks: [web, mongodb, fabric]
+    # Not published on the host: only Caddy can reach it.
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [app]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in deploy/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [web]
+
+volumes:
+  caddy-data:
+  caddy-config:
+
+networks:
+  web:
+  mongodb:
+    name: dsw-mongodb_default
+    external: true
+  fabric:
+    name: dsw-fabric
+    external: true

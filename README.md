@@ -6,14 +6,69 @@ through subject assessments. Results become skill coins in a wallet the
 student owns and can selectively share. Teachers manage assessments and see
 class and individual results.
 
-- **Front end:** the 10-screen React app designed in Figma Make (`src/`): Vite, React 19, Tailwind v4.
+- **Front end:** the React app designed in Figma Make (`src/`): Vite, React 19, Tailwind v4.
 - **API server:** Node.js + Express (`server/`). Connects the screens to the data.
 - **Database:** a self-hosted MongoDB server (`mongodb/`).
 - **Blockchain:** a Hyperledger Fabric 2.5 network kept by the school and Kanavoogle (`fabric/`). It is the tamper-proof record of skill coins.
 
 Everything runs on your own machines. Nothing is hosted.
 
-## Getting started
+## Who does what
+
+| Role | Signs in with | Can |
+| --- | --- | --- |
+| **Administrator** | password + 2FA | Set up the school, create and manage every account and class, oversee all results, coins, the blockchain and the audit log |
+| **Teacher** | password + 2FA | Approve questions, build and assign assessments, mark and release results, see their own classes (individual results only with student consent) |
+| **Student** | password | Sit assessments, see results and their skills wallet, give or withdraw consent, share verified skills with a link, see who accessed their data |
+| **Employer / anyone** | nothing | Check a credential a student shared (`/verify/<code>`) |
+
+## Showing it to people
+
+On a test machine, `pnpm sample:school` builds **Riverside High School
+(Sample)**: a class with a few weeks of results, coins on the blockchain, AI-drafted
+questions waiting for review, and an assessment left to sit live. The sign-in
+page then has one-click buttons, or sign in with:
+
+| Role | Email | Password |
+| --- | --- | --- |
+| Student (Mia Chen) | `student@sample.school` | `password123` |
+| Teacher (Sam Rivera) | `teacher@sample.school` | `password123` |
+| Administrator (Alex Morgan) | `admin@sample.school` | `password123` |
+
+Sample accounts skip 2FA and only work in **sample mode** (on by default in
+development, off in production unless `SAMPLE_SCHOOL=on`). The script refuses
+to run on a database that already has accounts.
+**[`docs/DEMO.md`](docs/DEMO.md)** is a 15-minute run sheet for the three views
+side by side.
+
+## The AI assistant
+
+The plan's agentic AI drafts and independently checks assessment questions,
+and helps teachers mark. A teacher stays in charge of everything:
+
+- **Generate questions** (Question Bank, or *Draft the missing questions* on a
+  template). An author agent drafts each question using the school's approved
+  questions as examples and checks for duplicates; a separate validator agent
+  checks the answer key, that there is one best answer, the skill and the
+  complexity; failures are revised once. Results wait in **Needs review** for
+  a teacher to approve. The screen shows the agents' steps as they work.
+- **Suggest marks** for written answers, with a reason for each, and **draft
+  feedback**. Only once an admin turns it on in School Settings. Answers are sent
+  without names or IDs, and nothing is saved until the teacher saves it.
+
+Add `ANTHROPIC_API_KEY` on the server to use Claude. Without a key the AI
+buttons say *AI isn't set up*, except in sample mode, where a scripted
+**offline demo** runs the same steps and labels everything *Offline demo · not
+real AI*. See [`server/README.md`](server/README.md#the-ai-assistant-ai).
+
+## Putting it on a server
+
+See **[`deploy/README.md`](deploy/README.md)**: MongoDB, the Fabric network and
+the app in Docker on one Linux server, with automatic HTTPS (Caddy), backups
+and updates. The first administrator is created from the command line; everything
+else is done in the web app.
+
+## Running it on your computer (development)
 
 Needs Node.js 22, pnpm and Docker.
 
@@ -23,37 +78,60 @@ pnpm install
 # Database
 cp mongodb/.env.example mongodb/.env   # set the passwords
 cp .env.example .env.local             # same app password in MONGODB_URI
-pnpm db:up && pnpm db:seed             # start MongoDB, load demo data (prints logins and verification codes)
+pnpm db:up
 
 # Blockchain
-pnpm fabric:up && pnpm ledger:sync     # start the Fabric network, write the skill coins to it
+pnpm fabric:up
+
+# The API prints a one-time setup code in its log while there's no administrator.
+# Open the app and choose "Set up your school". (Or: pnpm admin:create --email ... --first ... --last ...)
+
+# Optional: a starter question bank (teachers approve the questions in the app)
+pnpm db:starter-items
 
 # App + API
 pnpm dev:full                          # open the address Vite prints (http://localhost:8443 by default)
 ```
 
-Each screen shows a green **Live data** badge when it's reading from MongoDB
-and the blockchain. Without the API (for example in the Figma Make preview),
-screens fall back to their built-in demo data, with a grey **Demo data**
-badge. `pnpm dev` on its own still runs just the front end, as before.
+Then follow the **Getting started** checklist on the admin overview. People
+can be added by the admin, or sign up themselves: teachers with the school's
+staff code, students with their class's code (or a `/join/<code>` link).
 
-## Showing the blockchain to the customer
+### Reading the charts
 
-Open **Blockchain Ledger** in the sidebar, and see the talk track in
-[`fabric/README.md`](fabric/README.md#showing-it-to-the-customer). It covers:
-- live tamper detection (`pnpm ledger:demo tamper` / `restore`)
-- Public Verification with a real code
-- the consent check on Individual Results
+Every chart uses the same four skill levels: **Beginning** (under 50%),
+**Developing** (50–74), **Proficient** (75–89) and **Advanced** (90+), drawn as
+gray bands behind the bars. The purple bar is the person in focus; a dark tick
+is the class average. Chart titles state the finding (e.g. *"Above the class
+average in 4 of 6 skills"*), every value is printed, skills not assessed yet say
+so instead of showing 0, and trends only appear once there are two results. The
+components live in `src/components/charts.tsx`.
 
-`pnpm ledger:demo` runs a narrated walkthrough in the terminal.
+The screens only ever show real data. In development, if the API isn't
+running (for example in the Figma Make preview), the sign-in page offers a
+**design preview** that shows each screen with its sample data, clearly
+labelled. Production builds don't include it.
+
+## Proving the blockchain works
+
+- **Blockchain Ledger** (admin): the organisations, a student's wallet read
+  from the ledger, each result's fingerprint checked against the database,
+  and the chain of blocks with their hashes recomputed.
+- `pnpm ledger:verify` checks every wallet against the database and exits
+  with an error if anything was changed (`--probe` also shows Kanavoogle can't issue coins).
+- A shared verification link checks the ledger live, so an employer sees
+  whether the result was changed after the coins were recorded.
+
+See [`fabric/README.md`](fabric/README.md) for how the network works.
 
 ## Project structure
 
 ```
-src/        React app (screens in src/pages, API hook in src/lib/api.ts)
+src/        React app (screens in src/pages, API client in src/lib/api.ts, sign-in in src/lib/auth.tsx)
 server/     API server, MongoDB models, Fabric client, scripts. See server/README.md
 mongodb/    Self-hosted MongoDB: Docker Compose, config, backups. See mongodb/README.md
 fabric/     Hyperledger Fabric network and the skillcoin smart contract. See fabric/README.md
+deploy/     Production: app Dockerfile, Docker Compose with Caddy (HTTPS), backups. See deploy/README.md
 ```
 
 ## Scripts
@@ -62,10 +140,13 @@ fabric/     Hyperledger Fabric network and the skillcoin smart contract. See fab
 | --- | --- |
 | `pnpm dev` / `build` / `preview` | Front end only (Vite), as set up by Figma Make |
 | `pnpm dev:full` | API server + front end together |
-| `pnpm server` | API server only (restarts on changes) |
-| `pnpm start` | Production: serves the built app and the API from one process (`pnpm build` first) |
+| `pnpm api` | API server only (restarts on changes) |
+| `pnpm start` | Production mode without Docker: serves the built app and the API from one process (`pnpm build` first; needs `APP_SECRET`) |
 | `pnpm typecheck` | Type-check the front end and the server |
-| `pnpm db:up` / `db:down` / `db:seed` / `db:indexes` / `db:shell` / `db:logs` / `db:backup` | MongoDB |
+| `pnpm db:up` / `db:down` / `db:indexes` / `db:shell` / `db:logs` / `db:backup` | MongoDB |
+| `pnpm admin:create` | Create an administrator (`--reset-password` for a locked-out admin) |
+| `pnpm db:starter-items` | Load 28 starter questions (pending teacher approval) |
+| `pnpm sample:school` | Build the sample school on an empty test install (see docs/DEMO.md) |
 | `pnpm fabric:up` / `fabric:down` / `fabric:status` / `fabric:clean` | Hyperledger Fabric network |
-| `pnpm ledger:sync` | Write pending skill coins from MongoDB to the ledger |
-| `pnpm ledger:demo` | Narrated blockchain walkthrough (`tamper` / `restore` for the live demo) |
+| `pnpm ledger:sync` | Write pending skill coins to the ledger now (the app also does this automatically) |
+| `pnpm ledger:verify` | Audit the ledger against the database (read-only) |

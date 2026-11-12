@@ -1,4 +1,4 @@
-// Data for the "Blockchain Ledger" screen (src/pages/LedgerDemo.tsx): a
+// Data for the admin "Blockchain Ledger" screen (src/pages/LedgerOverview.tsx): a
 // wallet read from the ledger, its evidence checked against MongoDB, and the
 // most recent blocks with their hashes recalculated.
 import { Router } from "express";
@@ -9,6 +9,7 @@ import {
   UserModel,
   WalletEventModel,
   connectToDatabase,
+  currentSchool,
   walletBalances,
   type SkillKey,
 } from "../db";
@@ -23,10 +24,9 @@ import {
   type LedgerCoinEvent,
   type LedgerWallet,
 } from "../ledger";
-import { ApiError } from "./data";
+import { requireAuth, requireRole } from "../auth/session";
 import { LEDGER_ORGS, ledgerChaincode, ledgerChannel } from "../ledger/config";
 
-const DEFAULT_WALLET = "DSW-2024-JS-1147"; // Jordan Smith in the seed data
 const BLOCKS_SHOWN = 6;
 
 export type EvidenceRow = {
@@ -42,7 +42,7 @@ export type EvidenceRow = {
 
 export type BlockView = BlockSummary & { linksToPrevious: boolean | null };
 
-export type LedgerDemoData = {
+export type LedgerOverviewData = {
   students: { walletId: string; name: string }[];
   walletId: string;
   studentName: string | null;
@@ -58,7 +58,7 @@ function emptyBalances(): Record<SkillKey, number> {
   return Object.fromEntries(SKILL_KEYS.map((key) => [key, 0])) as Record<SkillKey, number>;
 }
 
-export async function loadLedgerDemo(requestedWallet?: string): Promise<LedgerDemoData> {
+export async function loadLedgerOverview(requestedWallet?: string): Promise<LedgerOverviewData> {
   await connectToDatabase();
 
   const studentDocs = await UserModel.find(
@@ -68,11 +68,14 @@ export async function loadLedgerDemo(requestedWallet?: string): Promise<LedgerDe
     .sort({ lastName: 1 })
     .lean();
   const students = studentDocs.map((s) => ({ walletId: s.walletId!, name: `${s.firstName} ${s.lastName}` }));
-  const walletId = (requestedWallet?.trim() || (students.some((s) => s.walletId === DEFAULT_WALLET) ? DEFAULT_WALLET : students[0]?.walletId) || "").toUpperCase();
+  // Default: the student with the most recent coins.
+  const latest = await WalletEventModel.findOne({}, { student: 1 }).sort({ createdAt: -1 }).lean();
+  const latestWallet = latest ? studentDocs.find((s) => s._id.equals(latest.student))?.walletId : undefined;
+  const walletId = (requestedWallet?.trim() || latestWallet || students[0]?.walletId || "").toUpperCase();
   const student = studentDocs.find((s) => s.walletId === walletId);
 
   // --- The ledger (Hyperledger Fabric) ---
-  let ledger: LedgerDemoData["ledger"];
+  let ledger: LedgerOverviewData["ledger"];
   try {
     const [info, recent, wallet] = await Promise.all([
       getChainInfo(),
@@ -144,24 +147,22 @@ export async function loadLedgerDemo(requestedWallet?: string): Promise<LedgerDe
   };
 }
 
-export const ledgerDemoRoutes = Router();
+export const ledgerRoutes = Router();
 
 /**
- * GET /api/demo/ledger?wallet=DSW-...: everything the Blockchain Ledger screen
- * shows. It has no login, so it is off in production unless ENABLE_LEDGER_DEMO=true.
+ * GET /api/ledger/overview?wallet=DSW-...: everything the Blockchain Ledger screen
+ * shows. Administrators only.
  */
-ledgerDemoRoutes.get("/demo/ledger", async (req, res) => {
-  if (process.env.NODE_ENV === "production" && process.env.ENABLE_LEDGER_DEMO !== "true") {
-    throw new ApiError(404, "not_found", "The ledger demo is turned off in production");
-  }
+ledgerRoutes.get("/ledger/overview", requireAuth(), requireRole("admin"), async (req, res) => {
   const wallet = typeof req.query.wallet === "string" ? req.query.wallet : undefined;
-  const data = await loadLedgerDemo(wallet);
+  const [data, school] = await Promise.all([loadLedgerOverview(wallet), currentSchool()]);
   res.json({
     ...data,
     network: {
       channel: ledgerChannel(),
       chaincode: ledgerChaincode(),
-      organisations: Object.values(LEDGER_ORGS).map((org) => ({ id: org.mspId, name: org.name, role: org.role })),
+      // The school's display name comes from School Settings; its blockchain identity is SchoolMSP.
+      organisations: Object.values(LEDGER_ORGS).map((org) => ({ id: org.mspId, name: org.mspId === "SchoolMSP" ? (school?.name ?? org.name) : org.name, role: org.role })),
       endorsementPolicy: "AND('SchoolMSP.peer', 'KanavoogleMSP.peer')",
     },
   });

@@ -1,7 +1,8 @@
-import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer, Tooltip } from 'recharts';
 import type { Page } from '../types';
 import DataSourceBadge from '../components/DataSourceBadge';
-import { DEMO_STUDENT_WALLET, useApiData } from '../lib/api';
+import { selectResult, useApiData } from '../lib/api';
+import { PageStatus } from '../components/ui';
+import { ChartCard, EmptyChart, SkillBullets, skillFinding, type BulletRow } from '../components/charts';
 
 interface Props { setPage: (p: Page) => void; }
 
@@ -28,7 +29,7 @@ const completedAssessments = [
 ];
 
 // Demo data, shown when the API server isn't running. The live version comes
-// from GET /api/students/:walletId/dashboard in the same shape.
+// from GET /api/me/dashboard in the same shape.
 const mockDashboard = {
   student: { firstName: 'Jordan', subtitle: 'Wednesday, October 16 · Grade 11 · Room 204' },
   stats: { active: 3, completed: 12, averageScore: 76, badges: 7 },
@@ -44,9 +45,16 @@ const gradeColor = (g: string) => {
 };
 
 export default function StudentDashboard({ setPage }: Props) {
-  const dashboard = useApiData(`/students/${DEMO_STUDENT_WALLET}/dashboard`, mockDashboard);
+  const dashboard = useApiData('/me/dashboard', mockDashboard);
+  if (!dashboard.ready) return <PageStatus error={dashboard.error} onRetry={dashboard.reload} />;
   const { student, stats, skills, activeAssessments, completedAssessments } = dashboard.data;
-  const radarData = skills.map(s => ({ skill: s.short, score: s.score, fullMark: 100 }));
+  const profileRows: BulletRow[] = skills.map((s) => ({
+    key: s.name,
+    name: s.name,
+    score: 'assessed' in s && s.assessed === false ? null : s.score,
+    change: Number(s.trend) || 0,
+    trailing: undefined,
+  }));
   const totalCoins = skills.reduce((a, b) => a + b.coins, 0);
 
   return (
@@ -60,7 +68,7 @@ export default function StudentDashboard({ setPage }: Props) {
             <DataSourceBadge source={dashboard.source} reason={dashboard.offlineReason} />
           </div>
           <h1 className="font-display font-700 text-2xl text-gray-900">
-            Good morning, {student.firstName} 👋
+            {new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'}, {student.firstName} 👋
           </h1>
           <p className="text-sm text-gray-500 font-body mt-0.5">{student.subtitle}</p>
         </div>
@@ -92,8 +100,25 @@ export default function StudentDashboard({ setPage }: Props) {
         ))}
       </div>
 
+      {/* Skill profile: the core of the wallet, strongest first, with change since the last result */}
+      <ChartCard
+        className="mb-5"
+        title={skillFinding(profileRows)}
+        subtitle={`Your skill profile across ${stats.completed} released result${stats.completed === 1 ? '' : 's'}. Bars show your score; bands show the level.`}
+        action={
+          <button onClick={() => setPage('digital-wallet')} className="text-xs text-orange-600 hover:text-orange-700 font-semibold font-body whitespace-nowrap">
+            Open wallet →
+          </button>
+        }
+      >
+        {stats.completed === 0 ? (
+          <EmptyChart>Your skill profile fills in when your first result is released. Start with an assessment below.</EmptyChart>
+        ) : (
+          <SkillBullets rows={profileRows} changeLabel="Last result" />
+        )}
+      </ChartCard>
+
       <div className="grid grid-cols-3 gap-5">
-        {/* Left column */}
         <div className="col-span-2 flex flex-col gap-5">
           {/* Active Assessments */}
           <div className="bg-white rounded-xl border border-[#E8EAF0] shadow-sm">
@@ -103,13 +128,14 @@ export default function StudentDashboard({ setPage }: Props) {
                 <p className="text-xs text-gray-400 font-body mt-0.5">{activeAssessments.length} in progress</p>
               </div>
               <button
-                onClick={() => setPage('assessment-interface')}
+                onClick={() => setPage('student-assessments')}
                 className="text-xs text-orange-600 hover:text-orange-700 font-semibold font-body"
               >
                 View All →
               </button>
             </div>
             <div className="divide-y divide-[#F0F2F7]">
+              {activeAssessments.length === 0 && <div className="px-5 py-8 text-center text-sm text-gray-400 font-body">Nothing to do right now. New assessments from your teachers appear here.</div>}
               {activeAssessments.map((a) => (
                 <div key={a.id} className="px-5 py-4">
                   <div className="flex items-start justify-between mb-2">
@@ -124,7 +150,7 @@ export default function StudentDashboard({ setPage }: Props) {
                         {a.due}
                       </span>
                       <button
-                        onClick={() => setPage('assessment-interface')}
+                        onClick={() => setPage('student-assessments')}
                         className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold font-body transition-all"
                       >
                         {a.progress > 0 ? 'Continue' : 'Start'}
@@ -145,6 +171,8 @@ export default function StudentDashboard({ setPage }: Props) {
             </div>
           </div>
 
+        </div>
+        <div className="flex flex-col gap-5">
           {/* Completed */}
           <div className="bg-white rounded-xl border border-[#E8EAF0] shadow-sm">
             <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-[#F0F2F7]">
@@ -156,14 +184,15 @@ export default function StudentDashboard({ setPage }: Props) {
                 onClick={() => setPage('results-interface')}
                 className="text-xs text-orange-600 hover:text-orange-700 font-semibold font-body"
               >
-                View All Results →
+                All results →
               </button>
             </div>
             <div className="divide-y divide-[#F0F2F7]">
+              {completedAssessments.length === 0 && <div className="px-5 py-8 text-center text-sm text-gray-400 font-body">No results yet. They appear once your teacher releases them.</div>}
               {completedAssessments.map((a) => (
                 <button
                   key={a.id}
-                  onClick={() => setPage('results-interface')}
+                  onClick={() => { selectResult(a.id); setPage('results-interface'); }}
                   className="w-full px-5 py-4 flex items-center gap-4 hover:bg-gray-50 transition-colors text-left"
                 >
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-display font-700 text-sm ${gradeColor(a.grade)}`}>
@@ -178,52 +207,6 @@ export default function StudentDashboard({ setPage }: Props) {
                     <div className="text-xs text-gray-400 font-body">Score</div>
                   </div>
                 </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Right column */}
-        <div className="flex flex-col gap-5">
-          {/* Radar chart */}
-          <div className="bg-white rounded-xl border border-[#E8EAF0] shadow-sm p-5">
-            <h2 className="font-display font-600 text-gray-900 mb-1">Skills Overview</h2>
-            <p className="text-xs text-gray-400 font-body mb-4">7 core competencies</p>
-            <ResponsiveContainer width="100%" height={200}>
-              <RadarChart data={radarData}>
-                <PolarGrid stroke="#F0F2F7" />
-                <PolarAngleAxis dataKey="skill" tick={{ fontSize: 10, fill: '#6B7280', fontFamily: 'Inter' }} />
-                <Radar name="Score" dataKey="score" stroke="#F97316" fill="#F97316" fillOpacity={0.15} strokeWidth={2} dot={{ fill: '#F97316', r: 3 }} />
-                <Tooltip formatter={(v) => [`${v}%`, 'Score']} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E8EAF0' }} />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Skills list */}
-          <div className="bg-white rounded-xl border border-[#E8EAF0] shadow-sm p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-display font-600 text-gray-900">Skill Progress</h2>
-              <button onClick={() => setPage('digital-wallet')} className="text-xs text-orange-600 hover:text-orange-700 font-semibold font-body">
-                Wallet →
-              </button>
-            </div>
-            <div className="flex flex-col gap-3">
-              {skills.map((s) => (
-                <div key={s.name}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-body text-gray-700 truncate pr-2">{s.name}</span>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className={`text-xs font-mono ${s.trend.startsWith('+') ? 'text-emerald-500' : 'text-red-500'}`}>{s.trend}</span>
-                      <span className="text-xs font-display font-600 text-gray-900 w-8 text-right">{s.score}%</span>
-                    </div>
-                  </div>
-                  <div className="bg-gray-100 rounded-full h-1.5">
-                    <div
-                      className="h-1.5 rounded-full bg-gradient-to-r from-orange-400 to-orange-600 transition-all"
-                      style={{ width: `${s.score}%` }}
-                    ></div>
-                  </div>
-                </div>
               ))}
             </div>
           </div>

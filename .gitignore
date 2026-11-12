@@ -22,3 +22,5 @@ dist/
 
 # local backups and screenshots made by tools
 /.backups/
+deploy/.env
+

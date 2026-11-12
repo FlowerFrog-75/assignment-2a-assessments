@@ -1,7 +1,8 @@
 // Routes behind the student screens and the teacher's Individual Results screen.
 // Each returns the same shape as the mock data in the matching src/pages file.
 import { Router } from "express";
-import type { Types } from "mongoose";
+import { currentUser, requireAuth, requireRole } from "../auth/session";
+import { Types } from "mongoose";
 import { SKILLS } from "../db/constants";
 import {
   AchievementModel,
@@ -12,13 +13,14 @@ import {
   UserModel,
   WalletEventModel,
   appendAuditLog,
+  currentSchool,
   hasConsent,
   walletBalances,
 } from "../db/models";
 import {
   ApiError,
-  demoTeacher,
   findStudent,
+  teachesStudent,
   groupSkillAverages,
   releasedAttempts,
   skillTotals,
@@ -41,8 +43,8 @@ import {
 export const studentRoutes = Router();
 
 /** Student Dashboard */
-studentRoutes.get("/students/:walletId/dashboard", async (req, res) => {
-  const student = await findStudent(req.params.walletId);
+studentRoutes.get("/me/dashboard", requireAuth(), requireRole("student"), async (req, res) => {
+  const student = currentUser(req);
   const released = await releasedAttempts(student._id);
   const inProgress = await AssessmentAttemptModel.find({ student: student._id, status: "in_progress" });
   const classes = await ClassGroupModel.find({ students: student._id, archived: false }, { _id: 1 }).lean();
@@ -87,7 +89,7 @@ studentRoutes.get("/students/:walletId/dashboard", async (req, res) => {
   res.json({
     student: {
       firstName: student.firstName,
-      subtitle: `${formatLongDay(new Date())} · Grade ${student.yearLevel} · ${student.school}`,
+      subtitle: [formatLongDay(new Date()), student.yearLevel ? `Grade ${student.yearLevel}` : null, (await currentSchool())?.name].filter(Boolean).join(" · "),
     },
     stats: {
       active: activeAssessments.length,
@@ -96,9 +98,11 @@ studentRoutes.get("/students/:walletId/dashboard", async (req, res) => {
       badges: await AchievementModel.countDocuments({ student: student._id }),
     },
     skills: SKILLS.map((skill) => ({
+      key: skill.key,
       name: skill.label,
       short: SKILL_SHORT[skill.key],
       score: totals[skill.key].percent,
+      assessed: totals[skill.key].assessed,
       coins: coins.get(skill.key) ?? 0,
       trend: signed(trends[skill.key]),
     })),
@@ -115,8 +119,8 @@ studentRoutes.get("/students/:walletId/dashboard", async (req, res) => {
 });
 
 /** Digital Skills Wallet */
-studentRoutes.get("/students/:walletId/wallet", async (req, res) => {
-  const student = await findStudent(req.params.walletId);
+studentRoutes.get("/me/wallet", requireAuth(), requireRole("student"), async (req, res) => {
+  const student = currentUser(req);
   const released = await releasedAttempts(student._id);
   const totals = skillTotals(released);
   const coins = new Map((await walletBalances(student._id)).map((b) => [b.skill, b.coins]));
@@ -151,6 +155,7 @@ studentRoutes.get("/students/:walletId/wallet", async (req, res) => {
       level: totals[skill.key].assessed ? skillLevel(totals[skill.key].percent) : 0,
       maxLevel: 5,
       progress: totals[skill.key].percent,
+      assessed: totals[skill.key].assessed,
     })),
     achievements: achievements.map((a) => ({
       id: a._id.toString(),
@@ -168,13 +173,16 @@ studentRoutes.get("/students/:walletId/wallet", async (req, res) => {
   });
 });
 
-/** Assessment Results: the student's most recently released result. */
-studentRoutes.get("/students/:walletId/results/latest", async (req, res) => {
-  const student = await findStudent(req.params.walletId);
-  const attempt = await AssessmentAttemptModel.findOne({ student: student._id, status: "released" }).sort({ releasedAt: -1 });
-  if (!attempt?.result) throw new ApiError(404, "no_results", "This student has no released results yet");
+/** Assessment Results: the student's most recently released result (or ?attempt=<id>). */
+studentRoutes.get("/me/results/latest", requireAuth(), requireRole("student"), async (req, res) => {
+  const student = currentUser(req);
+  const requested = typeof req.query.attempt === "string" && Types.ObjectId.isValid(req.query.attempt) ? new Types.ObjectId(req.query.attempt) : null;
+  const attempt = await AssessmentAttemptModel.findOne({ student: student._id, status: "released", ...(requested ? { _id: requested } : {}) }).sort({ releasedAt: -1 });
+  if (!attempt?.result) throw new ApiError(404, "no_results", "You don't have any released results yet. They appear here once your teacher releases them.");
   const template = await AssessmentTemplateModel.findById(attempt.template);
   const classmates = await AssessmentAttemptModel.find({ template: attempt.template, status: "released" }, { result: 1 }).lean();
+  const history = await AssessmentAttemptModel.find({ student: student._id, status: "released" }, { template: 1, releasedAt: 1 }).sort({ releasedAt: -1 }).lean();
+  const historyTemplates = await templateLookup(history.map((a) => a.template));
   const minutes = attempt.submittedAt ? Math.round((attempt.submittedAt.getTime() - attempt.startedAt.getTime()) / 60_000) : 0;
 
   res.json({
@@ -183,17 +191,29 @@ studentRoutes.get("/students/:walletId/results/latest", async (req, res) => {
     totalScore: attempt.result.percent,
     classAvg: average(classmates.map((a) => a.result?.percent ?? 0)),
     grade: attempt.result.grade ?? "",
-    timeTaken: `${minutes} min`,
+    attempts: history.map((a) => ({ id: a._id.toString(), title: historyTemplates.get(a.template.toString())?.title ?? "Assessment", date: formatDate(a.releasedAt) })),
+    attemptId: attempt._id.toString(),
+    feedback: attempt.result.feedback ?? "",
+    timeTaken: minutes < 1 ? "Under 1 min" : `${minutes} min`,
     timeRemaining: `${Math.max(0, (template?.durationMinutes ?? minutes) - minutes)} min remaining`,
     coinsEarned: attempt.result.coinsAwarded,
-    skillResults: attempt.result.skillScores.map((s) => ({
-      skill: SKILL_SHORT[s.skill],
-      score: s.percent,
-      max: 100,
-      level: levelLabel(s.percent),
-    })),
+    skillResults: attempt.result.skillScores.map((s) => {
+      const others = classmates.flatMap((a) => a.result?.skillScores.filter((x) => x.skill === s.skill) ?? []);
+      return {
+        key: s.skill,
+        skill: SKILL_SHORT[s.skill],
+        name: SKILLS.find((k) => k.key === s.skill)?.label ?? s.skill,
+        score: s.percent,
+        points: `${s.score}/${s.maxScore}`,
+        max: 100,
+        level: levelLabel(s.percent),
+        classAvg: others.length > 1 ? average(others.map((x) => x.percent)) : null,
+      };
+    }),
+    classCount: classmates.length,
     questionBreakdown: attempt.questions.map((q, i) => ({
       q: `Q${i + 1}`,
+      skill: SKILLS.find((k) => k.key === q.skill)?.label ?? q.skill,
       score: attempt.responses.find((r) => r.item.equals(q.item))?.pointsAwarded ?? 0,
       max: q.maxPoints,
     })),
@@ -202,32 +222,37 @@ studentRoutes.get("/students/:walletId/results/latest", async (req, res) => {
 
 /**
  * Individual Results (teacher view). Only shown if the student has given the
- * teacher consent. Every view, allowed or not, is written to the audit log.
+ * teacher consent, and only for students in the teacher's classes. Admins
+ * can see every student (oversight). Every view, allowed or not, is written
+ * to the audit log, which the student can see.
  */
-studentRoutes.get("/students/:walletId/profile", async (req, res) => {
-  const student = await findStudent(req.params.walletId);
-  const teacher = await demoTeacher();
+studentRoutes.get("/students/:walletId/profile", requireAuth(), requireRole("teacher", "admin"), async (req, res) => {
+  const student = await findStudent(String(req.params.walletId));
+  const viewer = currentUser(req);
   const name = `${student.firstName} ${student.lastName}`;
-  const allowed = await hasConsent(student._id, teacher._id, "individual_results");
+  let denied: string | null = null;
+  if (viewer.role === "teacher") {
+    if (!(await teachesStudent(viewer._id, student._id))) denied = "not in your classes";
+    else if (!(await hasConsent(student._id, viewer._id, "individual_results"))) denied = "no consent";
+  }
   await appendAuditLog({
-    actor: teacher._id,
-    actorRole: "teacher",
+    actor: viewer._id,
+    actorRole: viewer.role,
     action: "results.view",
     subjectStudent: student._id,
     ip: req.ip,
     userAgent: req.get("user-agent"),
-    status: allowed ? "success" : "denied",
-    details: { label: `${name}: individual results`, ...(allowed ? {} : { reason: "no consent" }) },
+    status: denied ? "denied" : "success",
+    details: { label: `${name}: individual results`, ...(denied ? { reason: denied } : {}) },
   });
-  if (!allowed) {
-    throw new ApiError(403, "consent_required", `${name} hasn't given consent for teachers to see their individual results.`);
-  }
+  if (denied === "not in your classes") throw new ApiError(403, "forbidden", `${name} isn't in any of your classes.`);
+  if (denied) throw new ApiError(403, "consent_required", `${name} hasn't given consent for teachers to see their individual results.`);
 
   const released = await releasedAttempts(student._id);
   const all = await AssessmentAttemptModel.find({ student: student._id }).sort({ startedAt: -1 });
   const templates = await templateLookup(all.map((a) => a.template));
   const totals = skillTotals(released);
-  const classes = await ClassGroupModel.find({ students: student._id, teachers: teacher._id }).lean();
+  const classes = await ClassGroupModel.find({ students: student._id, ...(viewer.role === "teacher" ? { teachers: viewer._id } : {}) }).lean();
   const classmates = [...new Set(classes.flatMap((c) => c.students.map(String)))];
   const classAverages = await groupSkillAverages(classmates);
   const assessed = SKILLS.filter((s) => totals[s.key].assessed);
@@ -257,12 +282,13 @@ studentRoutes.get("/students/:walletId/profile", async (req, res) => {
         subject: templates.get(a.template.toString())?.subject ?? "",
         date: formatShortDate(a.releasedAt ?? a.startedAt),
         score: a.result?.percent ?? 0,
-        status: a.status === "released" ? "Graded" : "In Progress",
+        status: a.status === "released" ? "Graded" : a.status === "in_progress" ? "In Progress" : "Awaiting release",
       })),
       skills: SKILLS.map((skill) => ({
         name: skill.label,
         short: SKILL_SHORT[skill.key],
         score: totals[skill.key].percent,
+        assessed: totals[skill.key].assessed,
         level: totals[skill.key].assessed ? skillLevel(totals[skill.key].percent) : 0,
         classAvg: classAverages[skill.key],
       })),
@@ -273,4 +299,28 @@ studentRoutes.get("/students/:walletId/profile", async (req, res) => {
       })),
     },
   });
+});
+
+/** POST /api/students/:walletId/notes { body }: a teacher's note (needs the same access as viewing). */
+studentRoutes.post("/students/:walletId/notes", requireAuth(), requireRole("teacher", "admin"), async (req, res) => {
+  const student = await findStudent(String(req.params.walletId));
+  const viewer = currentUser(req);
+  if (viewer.role === "teacher") {
+    if (!(await teachesStudent(viewer._id, student._id))) throw new ApiError(403, "forbidden", "This student isn't in any of your classes.");
+    if (!(await hasConsent(student._id, viewer._id, "individual_results"))) throw new ApiError(403, "consent_required", "This student hasn't given you consent.");
+  }
+  const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
+  if (!body) throw new ApiError(400, "empty_note", "Write a note first");
+  await TeacherNoteModel.create({ student: student._id, author: viewer._id, body: body.slice(0, 2000) });
+  await appendAuditLog({
+    actor: viewer._id,
+    actorRole: viewer.role,
+    action: "note.create",
+    subjectStudent: student._id,
+    ip: req.ip,
+    userAgent: req.get("user-agent"),
+    status: "success",
+    details: { label: `${student.firstName} ${student.lastName}: note added` },
+  });
+  res.status(201).json({ ok: true });
 });

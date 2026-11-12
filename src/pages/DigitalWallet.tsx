@@ -1,7 +1,8 @@
-import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import type { Page } from '../types';
 import DataSourceBadge from '../components/DataSourceBadge';
-import { DEMO_STUDENT_WALLET, useApiData } from '../lib/api';
+import { useApiData } from '../lib/api';
+import { PageStatus } from '../components/ui';
+import { ChartCard, EmptyChart, LEVEL_FILL, levelOf, PeriodColumns } from '../components/charts';
 
 interface Props { setPage: (p: Page) => void; }
 
@@ -47,11 +48,20 @@ const mockWallet = {
 };
 
 export default function DigitalWallet({ setPage }: Props) {
-  const wallet = useApiData(`/students/${DEMO_STUDENT_WALLET}/wallet`, mockWallet);
+  const wallet = useApiData('/me/wallet', mockWallet);
+  if (!wallet.ready) return <PageStatus error={wallet.error} onRetry={wallet.reload} />;
   const { student, stats, coinHistory, ledger } = wallet.data;
   const skills = wallet.data.skills.map((s) => ({ ...s, ...(SKILL_STYLE[s.name] ?? { badge: '⭐', color: '#7C3AED' }) }));
   const achievements = wallet.data.achievements.map((a) => ({ ...a, badge: BADGE_ICON[a.code] ?? '🏅' }));
   const totalCoins = skills.reduce((a, b) => a + b.coins, 0);
+  type WalletSkill = (typeof skills)[number] & { assessed?: boolean };
+  const rankedSkills = (skills as WalletSkill[]).map((s) => ({ ...s, assessed: s.assessed ?? s.level > 0 })).sort((a, b) => b.coins - a.coins || b.progress - a.progress);
+  const assessedCount = rankedSkills.filter((s) => s.assessed).length;
+  const maxCoins = Math.max(1, ...rankedSkills.map((s) => s.coins));
+  const coinHeadline = totalCoins > 0 ? `Most coins in ${rankedSkills[0].name} (${rankedSkills[0].coins.toLocaleString()} of ${totalCoins.toLocaleString()})` : 'Your skill coins';
+  const monthly = coinHistory.map((m, i) => ({ label: m.month, value: m.coins - (i > 0 ? coinHistory[i - 1].coins : 0) }));
+  const best = monthly.reduce<{ label: string; value: number } | null>((top, m) => (!top || m.value > top.value ? m : top), null);
+  const monthlyHeadline = monthly.length >= 2 && best ? `Best month: ${best.label} (+${best.value} coins)` : 'Coins by month';
 
   return (
     <div className="min-h-screen bg-[#F8F9FC] p-6">
@@ -67,15 +77,15 @@ export default function DigitalWallet({ setPage }: Props) {
           <p className="text-sm text-gray-500 font-body mt-0.5">{student.name} · {student.grade} · ID: {student.walletId}</p>
         </div>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-sm font-medium font-body text-gray-600 hover:border-orange-200 hover:text-orange-700 transition-all">
+          <button onClick={() => setPage('privacy')} className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-sm font-medium font-body text-gray-600 hover:border-orange-200 hover:text-orange-700 transition-all">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
             Share Wallet
           </button>
           <button
-            onClick={() => setPage('public-verification')}
+            onClick={() => setPage('privacy')}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold font-body transition-all shadow-sm shadow-orange-200"
           >
-            🔗 Public Verification
+            🔗 Create verification link
           </button>
         </div>
       </div>
@@ -99,7 +109,7 @@ export default function DigitalWallet({ setPage }: Props) {
             {[
               { label: 'Assessments', value: String(stats.assessments), icon: '📋' },
               { label: 'Badges Earned', value: String(stats.badges), icon: '🏅' },
-              { label: 'Skill Level Avg.', value: `${stats.levelAverage}/5`, icon: '⭐' },
+              { label: 'Skills assessed', value: `${assessedCount} of ${skills.length}`, icon: '⭐' },
             ].map((s) => (
               <div key={s.label}>
                 <div className="text-2xl mb-1">{s.icon}</div>
@@ -108,55 +118,40 @@ export default function DigitalWallet({ setPage }: Props) {
               </div>
             ))}
           </div>
-          <div className="w-px h-16 bg-white/10"></div>
-          <div className="w-32 h-32">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={coinHistory} barSize={16}>
-                <Bar dataKey="coins" fill="#F97316" radius={[3, 3, 0, 0]} />
-                <XAxis dataKey="month" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)', fontFamily: 'Inter' }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ fontSize: 11, borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: '#252641', color: '#fff' }} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
         </div>
       </div>
 
       <div className="grid grid-cols-3 gap-5">
-        {/* Skills progress */}
-        <div className="col-span-2 bg-white rounded-xl border border-[#E8EAF0] shadow-sm p-5">
-          <h2 className="font-display font-600 text-gray-900 mb-4">Skill Progress by Domain</h2>
-          <div className="flex flex-col gap-5">
-            {skills.map((s) => (
-              <div key={s.name}>
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">{s.badge}</span>
-                    <span className="text-sm font-body font-600 text-gray-800">{s.name}</span>
+        <div className="col-span-2 flex flex-col gap-5">
+          <ChartCard title={coinHeadline} subtitle="Coins come from released assessment results: 10 per mark in each skill. The level is your overall score in that skill.">
+            <ul className="space-y-2 font-body">
+              {rankedSkills.map((s) => (
+                <li key={s.name} className="grid items-center gap-3" style={{ gridTemplateColumns: 'minmax(9rem, 12rem) 1fr 4.5rem 6.5rem' }} title={`${s.name}: ${s.coins} coins${s.assessed ? `, ${s.progress}% (${levelOf(s.progress)})` : ', not assessed yet'}`}>
+                  <span className={`flex items-center gap-2 text-sm truncate ${s.assessed ? 'text-gray-800' : 'text-gray-400'}`}>
+                    <span aria-hidden="true">{s.badge}</span>
+                    {s.name}
+                  </span>
+                  <div className="h-2.5 rounded-full bg-gray-100" aria-hidden="true">
+                    {s.coins > 0 && <div className="h-full rounded-r bg-orange-500" style={{ width: `${(s.coins / maxCoins) * 100}%` }} />}
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex gap-1">
-                      {Array.from({ length: 5 }).map((_, i) => (
-                        <div
-                          key={i}
-                          className={`w-5 h-1.5 rounded-full ${i < s.level ? 'opacity-100' : 'opacity-20'}`}
-                          style={{ background: i < s.level ? s.color : '#D1D5DB' }}
-                        ></div>
-                      ))}
-                    </div>
-                    <span className="text-xs font-mono text-gray-400">Lv.{s.level}</span>
-                    <span className="font-display font-700 text-base text-gray-900 w-12 text-right">{s.coins}</span>
-                    <span className="text-xs text-orange-500 font-body">coins</span>
-                  </div>
-                </div>
-                <div className="bg-gray-100 rounded-full h-2">
-                  <div
-                    className="h-2 rounded-full transition-all"
-                    style={{ width: `${s.progress}%`, background: s.color }}
-                  ></div>
-                </div>
-              </div>
-            ))}
-          </div>
+                  <span className="text-sm font-semibold text-gray-900 text-right tabular-nums">{s.coins.toLocaleString()}</span>
+                  <span className="text-right">
+                    {s.assessed ? (
+                      <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold" style={{ background: LEVEL_FILL[levelOf(s.progress)].bg, color: LEVEL_FILL[levelOf(s.progress)].text }}>
+                        {levelOf(s.progress)}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] italic text-gray-400">Not assessed yet</span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </ChartCard>
+
+          <ChartCard title={monthlyHeadline} subtitle="Coins earned each month (after any revocations)">
+            {monthly.length >= 2 ? <PeriodColumns data={monthly} unit="coins" height={140} /> : <EmptyChart>{monthly.length === 1 ? `All ${monthly[0].value} coins so far were earned in ${monthly[0].label}. A month-by-month view appears next month.` : 'No coins yet. They arrive when your teacher releases a result.'}</EmptyChart>}
+          </ChartCard>
         </div>
 
         {/* Achievements */}
@@ -192,7 +187,7 @@ export default function DigitalWallet({ setPage }: Props) {
               Share a verified public link to your skills wallet with employers, universities, and collaborators.
             </p>
             <button
-              onClick={() => setPage('public-verification')}
+              onClick={() => setPage('privacy')}
               className="w-full bg-orange-500 hover:bg-orange-600 text-white rounded-lg py-2.5 text-sm font-semibold font-body transition-all"
             >
               Generate Verification Link

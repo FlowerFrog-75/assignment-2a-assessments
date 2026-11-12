@@ -1,8 +1,11 @@
 import { useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import type { Page } from '../types';
 import DataSourceBadge from '../components/DataSourceBadge';
 import { selectStudent, useApiData } from '../lib/api';
+import { downloadCsv, PageStatus } from '../components/ui';
+import { ChartCard, EmptyChart, HeatCell, HeatLegend, LevelDistribution, LEVELS, levelOf, SkillBullets, TrendChart, type BulletRow } from '../components/charts';
+import JoinCode from '../components/JoinCode';
+import { isPreviewMode } from '../lib/api';
 
 interface Props { setPage: (p: Page) => void; }
 
@@ -40,6 +43,8 @@ const classProgress = [
 // from GET /api/classes/current/results in the same shape.
 const mockClass = {
   header: { className: 'Class 11B', subtitle: 'Grade 11 · Ms. Chen · Term 3, 2024' },
+  classes: [] as { id: string; name: string }[],
+  classId: '',
   completed: { done: 38, expected: 40 },
   students,
   skillAverages,
@@ -47,20 +52,43 @@ const mockClass = {
 };
 
 export default function TeacherClassResults({ setPage }: Props) {
-  const results = useApiData('/classes/current/results', mockClass);
-  const { header, completed, students, skillAverages, classProgress } = results.data;
-  const classAvg = students.length ? Math.round(students.reduce((a, s) => a + s.avg, 0) / students.length) : 0;
+  const [classId, setClassId] = useState(() => sessionStorage.getItem('dsw:class') ?? '');
+  const results = useApiData(`/classes/current/results${classId ? `?classId=${encodeURIComponent(classId)}` : ''}`, mockClass);
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'name' | 'avg' | 'assessments'>('avg');
   const [filterRange, setFilterRange] = useState('All');
+  if (!results.ready) return <PageStatus error={results.error} onRetry={results.reload} />;
+  const { header, students, skillAverages, classProgress, classes } = results.data;
+  const joinCode = 'joinCode' in results.data ? (results.data as { joinCode: string | null }).joinCode : null;
+  const joinEnabled = 'joinEnabled' in results.data ? Boolean((results.data as { joinEnabled: boolean }).joinEnabled) : false;
+  const avgRows: BulletRow[] = skillAverages.map((s) => ({
+    key: s.skill,
+    name: 'name' in s ? String((s as { name: string }).name) : s.skill,
+    score: (s.avg as number | null) ?? null,
+  }));
+  const rankedAvgs = avgRows.filter((r) => r.score !== null).sort((a, b) => (b.score as number) - (a.score as number));
+  const skillHeadline = rankedAvgs.length >= 2
+    ? `Class is strongest in ${rankedAvgs[0].name} (${rankedAvgs[0].score}%) and weakest in ${rankedAvgs[rankedAvgs.length - 1].name} (${rankedAvgs[rankedAvgs.length - 1].score}%)`
+    : rankedAvgs.length === 1 ? `${rankedAvgs[0].name}: class average ${rankedAvgs[0].score}%` : 'Skill averages';
+  // Students who haven't had a result released yet don't count towards averages.
+  const assessed = students.filter((s) => s.assessments > 0);
+  const classAvg = assessed.length ? Math.round(assessed.reduce((a, s) => a + s.avg, 0) / assessed.length) : 0;
+  const chooseClass = (id: string) => {
+    try { sessionStorage.setItem('dsw:class', id); } catch { /* ignore */ }
+    setClassId(id);
+  };
+  const exportCsv = () =>
+    downloadCsv(`${header.className.replace(/[^\w-]+/g, '_')}-results.csv`, [
+      ['Name', 'Wallet ID', 'Average %', 'Assessments', ...skillAverages.map((s) => s.skill)],
+      ...students.map((s) => [s.name, s.id, s.avg, s.assessments, ...Object.values(s.skills)]),
+    ]);
 
   const filtered = students
     .filter(s => {
       const matchSearch = s.name.toLowerCase().includes(search.toLowerCase());
       const matchRange = filterRange === 'All' ||
-        (filterRange === '80+' && s.avg >= 80) ||
-        (filterRange === '60–79' && s.avg >= 60 && s.avg < 80) ||
-        (filterRange === '<60' && s.avg < 60);
+        (filterRange === 'No results' && s.assessments === 0) ||
+        (s.assessments > 0 && levelOf(s.avg) === filterRange);
       return matchSearch && matchRange;
     })
     .sort((a, b) => {
@@ -69,84 +97,79 @@ export default function TeacherClassResults({ setPage }: Props) {
       return b.assessments - a.assessments;
     });
 
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return 'text-emerald-700 bg-emerald-50';
-    if (score >= 65) return 'text-orange-700 bg-orange-50';
-    return 'text-red-700 bg-red-50';
-  };
 
   return (
     <div className="min-h-screen bg-[#F8F9FC] p-6">
       {/* Header */}
-      <div className="mb-6 flex items-start justify-between">
-        <div>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
-            <span className="text-xs font-mono font-600 text-emerald-600 uppercase tracking-widest">Teacher Dashboard</span>
+            <span className="text-xs font-mono font-600 text-emerald-600 uppercase tracking-widest">Class results</span>
             <DataSourceBadge source={results.source} reason={results.offlineReason} />
           </div>
-          <h1 className="font-display font-700 text-2xl text-gray-900">Class Results Overview</h1>
-          <p className="text-sm text-gray-500 font-body mt-0.5">{header.className} · {header.subtitle} · {students.length} students</p>
+          <h1 className="font-display font-700 text-2xl text-gray-900">{header.className}</h1>
+          <p className="text-sm text-gray-500 font-body mt-0.5">{header.subtitle} · {students.length} student{students.length === 1 ? '' : 's'}</p>
         </div>
-        <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-sm font-medium font-body text-gray-600 hover:border-emerald-200 hover:text-emerald-700 transition-all">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        <div className="flex flex-wrap gap-3">
+          {classes.length > 1 && (
+            <select
+              aria-label="Class"
+              value={results.data.classId}
+              onChange={(e) => chooseClass(e.target.value)}
+              className="px-3 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-sm font-body text-gray-700"
+            >
+              {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          )}
+          <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-sm font-medium font-body text-gray-600 hover:border-emerald-200 hover:text-emerald-700 transition-all">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
             Export CSV
           </button>
-          <button
-            onClick={() => setPage('access-logging')}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold font-body transition-all shadow-sm shadow-emerald-200"
-          >
-            🔒 Audit Logs
+          <button onClick={() => setPage('access-logging')} className="px-4 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-sm font-medium font-body text-gray-600 hover:border-emerald-200 hover:text-emerald-700 transition-all">
+            Access log
           </button>
         </div>
       </div>
 
-      {/* Summary stats */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      {!isPreviewMode() && results.data.classId && (
+        <div className="mb-6">
+          <JoinCode key={results.data.classId} classId={results.data.classId} code={joinCode} enabled={joinEnabled} />
+        </div>
+      )}
+
+      {/* Headline numbers */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
         {[
-          { label: 'Class Average', value: `${classAvg}%`, icon: '📊', color: 'text-emerald-600', bg: 'bg-emerald-50' },
-          { label: 'Students Above 80%', value: String(students.filter(s => s.avg >= 80).length), icon: '🌟', color: 'text-purple-600', bg: 'bg-purple-50' },
-          { label: 'Students Needing Support', value: String(students.filter(s => s.avg < 65).length), icon: '🎯', color: 'text-orange-600', bg: 'bg-orange-50' },
-          { label: 'Assessments Completed', value: `${completed.done} / ${completed.expected}`, icon: '✅', color: 'text-blue-600', bg: 'bg-blue-50' },
-        ].map((s) => (
-          <div key={s.label} className="bg-white rounded-xl border border-[#E8EAF0] p-4 shadow-sm">
-            <div className={`w-9 h-9 rounded-lg ${s.bg} flex items-center justify-center text-lg mb-3`}>{s.icon}</div>
-            <div className={`font-display font-700 text-2xl ${s.color}`}>{s.value}</div>
-            <div className="text-xs text-gray-400 font-body mt-1">{s.label}</div>
+          { label: 'Class average', value: assessed.length ? `${classAvg}%` : '—', sub: assessed.length ? levelOf(classAvg) : 'No results yet' },
+          { label: 'Students with results', value: `${assessed.length} / ${students.length}`, sub: students.length - assessed.length ? `${students.length - assessed.length} still to sit or be released` : 'Everyone has a result' },
+          { label: 'Proficient or above (75+)', value: String(assessed.filter((s) => s.avg >= 75).length), sub: 'students' },
+          { label: 'Beginning (below 50)', value: String(assessed.filter((s) => s.avg < 50).length), sub: 'may need support' },
+        ].map((m) => (
+          <div key={m.label} className="bg-white rounded-xl border border-[#E8EAF0] p-4 shadow-sm">
+            <div className="text-xs text-gray-500 font-body">{m.label}</div>
+            <div className="font-display font-700 text-2xl text-gray-900 mt-1">{m.value}</div>
+            <div className="text-xs text-gray-400 font-body mt-0.5">{m.sub}</div>
           </div>
         ))}
       </div>
 
       <div className="grid grid-cols-3 gap-5 mb-5">
-        {/* Skill averages bar */}
-        <div className="col-span-2 bg-white rounded-xl border border-[#E8EAF0] shadow-sm p-5">
-          <h2 className="font-display font-600 text-gray-900 mb-1">Average Skill Scores — Class</h2>
-          <p className="text-xs text-gray-400 font-body mb-4">Class mean across 7 competencies</p>
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={skillAverages} barSize={28}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#F0F2F7" />
-              <XAxis dataKey="skill" tick={{ fontSize: 11, fill: '#9CA3AF', fontFamily: 'Inter' }} axisLine={false} tickLine={false} />
-              <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: '#9CA3AF', fontFamily: 'Inter' }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E8EAF0' }} formatter={(v) => [`${v}%`, 'Class Avg']} />
-              <Bar dataKey="avg" fill="#10B981" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <ChartCard
+          className="col-span-2"
+          title={skillHeadline}
+          subtitle="Average of each student’s score in each skill (students not yet assessed in a skill are left out)."
+        >
+          {assessed.length === 0 ? <EmptyChart>Skill averages appear when the first results are released.</EmptyChart> : <SkillBullets rows={avgRows} color="#059669" />}
+        </ChartCard>
 
-        {/* Progress over time */}
-        <div className="bg-white rounded-xl border border-[#E8EAF0] shadow-sm p-5">
-          <h2 className="font-display font-600 text-gray-900 mb-1">Progress Over Time</h2>
-          <p className="text-xs text-gray-400 font-body mb-4">Weekly class average</p>
-          <ResponsiveContainer width="100%" height={180}>
-            <LineChart data={classProgress}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#F0F2F7" />
-              <XAxis dataKey="week" tick={{ fontSize: 10, fill: '#9CA3AF', fontFamily: 'Inter' }} axisLine={false} tickLine={false} />
-              <YAxis domain={[55, 85]} tick={{ fontSize: 10, fill: '#9CA3AF', fontFamily: 'Inter' }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E8EAF0' }} formatter={(v) => [`${v}%`, 'Avg']} />
-              <Line type="monotone" dataKey="avg" stroke="#10B981" strokeWidth={2} dot={{ fill: '#10B981', r: 3 }} />
-            </LineChart>
-          </ResponsiveContainer>
+        <div className="flex flex-col gap-5">
+          <ChartCard title="Where students are" subtitle="Overall average, by level">
+            <LevelDistribution values={students.map((s) => (s.assessments > 0 ? s.avg : null))} />
+          </ChartCard>
+          <ChartCard title="Class average over time" subtitle="By week of release">
+            <TrendChart points={classProgress.map((p) => ({ label: p.week, value: p.avg }))} height={150} emptyText="A trend appears after results are released in two different weeks." />
+          </ChartCard>
         </div>
       </div>
 
@@ -165,7 +188,7 @@ export default function TeacherClassResults({ setPage }: Props) {
             />
           </div>
           <div className="flex gap-1.5">
-            {['All', '80+', '60–79', '<60'].map((r) => (
+            {['All', ...[...LEVELS].reverse().map((l) => l.label), 'No results'].map((r) => (
               <button
                 key={r}
                 onClick={() => setFilterRange(r)}
@@ -191,6 +214,11 @@ export default function TeacherClassResults({ setPage }: Props) {
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-3">
+          <p className="text-xs text-gray-500 font-body">Each cell is the student’s score in that skill, shaded by level.</p>
+          <HeatLegend />
+        </div>
+        <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="text-xs font-mono text-gray-400 uppercase tracking-wider">
@@ -216,21 +244,17 @@ export default function TeacherClassResults({ setPage }: Props) {
                     </div>
                     <div>
                       <div className="text-sm font-body font-600 text-gray-900">{s.name}</div>
-                      <div className="text-xs text-gray-400 font-body">{s.assessments} assessments</div>
+                      <div className="text-xs text-gray-400 font-body">{s.assessments} assessment{s.assessments === 1 ? '' : 's'}</div>
                     </div>
                   </div>
                 </td>
-                {Object.values(s.skills).map((score, i) => (
-                  <td key={i} className="px-3 py-3.5 text-center">
-                    <span className={`text-xs font-mono font-600 px-1.5 py-0.5 rounded ${getScoreColor(score)}`}>
-                      {score}
-                    </span>
+                {Object.entries(s.skills as Record<string, number | null>).map(([skill, score], i) => (
+                  <td key={skill} className="px-2 py-3 text-center">
+                    <HeatCell value={score} label={`${s.name}, ${skillAverages[i]?.skill ?? skill}`} />
                   </td>
                 ))}
-                <td className="px-3 py-3.5 text-center">
-                  <span className={`text-sm font-display font-700 px-2 py-1 rounded-lg ${getScoreColor(s.avg)}`}>
-                    {s.avg}%
-                  </span>
+                <td className="px-3 py-3 text-center border-l border-[#F0F2F7]">
+                  {s.assessments === 0 ? <span className="text-xs text-gray-400 font-body">No results</span> : <HeatCell value={s.avg} label={`${s.name}, overall`} />}
                 </td>
                 <td className="px-5 py-3.5">
                   <button
@@ -244,6 +268,8 @@ export default function TeacherClassResults({ setPage }: Props) {
             ))}
           </tbody>
         </table>
+        </div>
+        {filtered.length === 0 && <div className="px-5 py-8 text-center text-sm text-gray-400 font-body">No students match.</div>}
       </div>
     </div>
   );

@@ -1,0 +1,14 @@
+# HTTPS front door. Caddy gets a certificate from Let's Encrypt for $DOMAIN
+# (the domain's DNS must point at this server, with ports 80 and 443 open).
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:4000
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+	log {
+		output stdout
+		format console
+	}
+}

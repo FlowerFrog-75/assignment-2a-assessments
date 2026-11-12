@@ -4,6 +4,7 @@ import { SKILL_KEYS, type SkillKey } from "../db/constants";
 import {
   AssessmentAttemptModel,
   AssessmentTemplateModel,
+  ClassGroupModel,
   UserModel,
   type AssessmentAttemptDocument,
 } from "../db/models";
@@ -20,22 +21,15 @@ export class ApiError extends Error {
   }
 }
 
-/**
- * Login isn't built yet, so teacher screens act as this teacher (the seed's
- * Ms Chen). Replace with the signed-in user once authentication exists.
- */
-export const DEMO_TEACHER_EMAIL = process.env.DEMO_TEACHER_EMAIL ?? "s.chen@northview.example";
-
 export async function findStudent(walletId: string) {
   const student = await UserModel.findOne({ walletId: walletId.toUpperCase(), role: "student" });
   if (!student) throw new ApiError(404, "student_not_found", `No student with wallet ID ${walletId}`);
   return student;
 }
 
-export async function demoTeacher() {
-  const teacher = await UserModel.findOne({ email: DEMO_TEACHER_EMAIL, role: "teacher" });
-  if (!teacher) throw new ApiError(404, "teacher_not_found", "The demo teacher doesn't exist. Run: pnpm db:seed");
-  return teacher;
+/** True if the teacher teaches the student in at least one active class. */
+export async function teachesStudent(teacherId: Types.ObjectId, studentId: Types.ObjectId): Promise<boolean> {
+  return (await ClassGroupModel.exists({ teachers: teacherId, students: studentId, archived: false })) !== null;
 }
 
 export type SkillTotals = Record<SkillKey, { score: number; maxScore: number; percent: number; assessed: boolean }>;
@@ -80,8 +74,11 @@ export async function templateLookup(ids: Types.ObjectId[]) {
   return new Map(templates.map((t) => [t._id.toString(), t]));
 }
 
-/** Average skill percentage across a group of students (each student counts once). */
-export async function groupSkillAverages(studentIds: (Types.ObjectId | string)[]): Promise<Record<SkillKey, number>> {
+/**
+ * Average skill percentage across a group of students (each student counts
+ * once). null when no student in the group has been assessed in that skill.
+ */
+export async function groupSkillAverages(studentIds: (Types.ObjectId | string)[]): Promise<Record<SkillKey, number | null>> {
   const attempts = await AssessmentAttemptModel.find({ student: { $in: studentIds }, status: "released" });
   const byStudent = new Map<string, AssessmentAttemptDocument[]>();
   for (const attempt of attempts) {
@@ -92,7 +89,7 @@ export async function groupSkillAverages(studentIds: (Types.ObjectId | string)[]
   return Object.fromEntries(
     SKILL_KEYS.map((key) => {
       const values = perStudent.filter((t) => t[key].assessed).map((t) => t[key].percent);
-      return [key, values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0];
+      return [key, values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : null];
     }),
-  ) as Record<SkillKey, number>;
+  ) as Record<SkillKey, number | null>;
 }

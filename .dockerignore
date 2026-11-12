@@ -1,0 +1,16 @@
+node_modules
+dist
+.git
+.env*
+!.env.example
+mongodb/backups
+mongodb/.env
+fabric/organizations
+fabric/channel-artifacts
+fabric/packages
+fabric/.demo
+fabric/chaincode/**/node_modules
+deploy/.env
+deploy/data
+.backups
+*.log

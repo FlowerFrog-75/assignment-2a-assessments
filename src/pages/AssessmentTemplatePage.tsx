@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { Page } from '../types';
 import DataSourceBadge from '../components/DataSourceBadge';
+import { apiSend, ApiRequestError, selectTemplate, useApiData } from '../lib/api';
+import { Alert, PageStatus } from '../components/ui';
 import { apiGet, apiPost, useApiData } from '../lib/api';
 import TemplateFormModal, { type TemplateCard, type TemplateDetail, type TemplateOptions } from '../components/TemplateFormModal';
 import LaunchModal from '../components/LaunchModal';
@@ -144,6 +146,23 @@ function cardToDetail(t: TemplateCard): TemplateDetail {
 
 export default function AssessmentTemplatePage({ setPage }: Props) {
   const library = useApiData('/templates', mockLibrary);
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState('All');
+  const [error, setError] = useState<string | null>(null);
+  if (!library.ready) return <PageStatus error={library.error} onRetry={library.reload} />;
+  const { stats, templates } = library.data;
+  const open = (id: string) => {
+    selectTemplate(id);
+    setPage('template-editor');
+  };
+  const duplicate = async (id: string) => {
+    try {
+      const copy = await apiSend<{ id: string }>('POST', `/templates/${id}/duplicate`);
+      open(copy.id);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not duplicate');
+    }
+  };
   const options = useApiData('/templates/options', mockOptions);
   const { stats, templates } = library.data;
   const [search, setSearch] = useState('');
@@ -217,6 +236,10 @@ export default function AssessmentTemplatePage({ setPage }: Props) {
             New Template
           </button>
         </div>
+        <button onClick={() => open('new')} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold font-body transition-all shadow-sm shadow-purple-200 active:scale-95">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
+          New Template
+        </button>
       </div>
 
       {notice && (
@@ -271,11 +294,19 @@ export default function AssessmentTemplatePage({ setPage }: Props) {
         ))}
       </div>
 
+      {error && <div className="mb-4"><Alert>{error}</Alert></div>}
+      {templates.length === 0 && (
+        <div className="bg-white rounded-xl border border-[#E8EAF0] p-10 text-center text-sm text-gray-500 font-body">
+          No assessment templates yet. Create one with “New Template”: choose the skills, then how many questions to draw from the question bank.
+        </div>
+      )}
+
       {/* Template grid */}
       <div className="grid grid-cols-2 gap-4">
         {filtered.map((t) => (
           <div
             key={t.id}
+            onClick={() => open(t.id)}
             className="bg-white rounded-xl border border-[#E8EAF0] p-5 hover:border-purple-200 hover:shadow-md transition-all cursor-pointer group"
           >
             <div className="flex items-start justify-between mb-3">
@@ -325,6 +356,12 @@ export default function AssessmentTemplatePage({ setPage }: Props) {
             {/* Actions */}
             <div className="flex items-center gap-2">
               <button
+                onClick={(e) => { e.stopPropagation(); open(t.id); }}
+                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg py-2 text-xs font-semibold font-body transition-all"
+              >
+                {t.status === 'Published' ? 'Open & assign' : 'Edit'}
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); duplicate(t.id); }} className="px-3 py-2 rounded-lg border border-[#E8EAF0] text-gray-500 hover:border-purple-200 hover:text-purple-600 text-xs font-medium font-body transition-all">
                 onClick={() => { setNotice(null); setLaunching(t); }}
                 disabled={t.status !== 'Published'}
                 title={t.status === 'Published' ? undefined : 'Publish this template before launching it'}

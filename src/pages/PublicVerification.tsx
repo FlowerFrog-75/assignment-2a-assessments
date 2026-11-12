@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Page } from '../types';
 import DataSourceBadge from '../components/DataSourceBadge';
-import { apiGetShared, type DataSource } from '../lib/api';
+import { apiGetShared, isPreviewMode, type DataSource } from '../lib/api';
 
 interface Props { setPage: (p: Page) => void; }
 
@@ -72,9 +72,10 @@ const initialsOf = (name: string) => name.split(' ').map((n) => n[0]).join('');
 
 export default function PublicVerification({ setPage }: Props) {
   const [verifyCode, setVerifyCode] = useState('');
-  const [card, setCard] = useState<Credential | null>(walletData); // sample credential until a code is checked
+  // The design preview shows a sample credential; production shows nothing until a code is checked.
+  const [card, setCard] = useState<Credential | null>(isPreviewMode() ? walletData : null);
   const [ledger, setLedger] = useState<VerifyResponse['ledger'] | null>(null);
-  const [outcome, setOutcome] = useState<null | 'verified' | 'unverified' | 'not-found'>(null);
+  const [outcome, setOutcome] = useState<null | 'verified' | 'unverified' | 'not-found' | 'offline'>(null);
   const [message, setMessage] = useState('');
   const [source, setSource] = useState<DataSource | null>(null);
   const [checking, setChecking] = useState(false);
@@ -101,20 +102,27 @@ export default function PublicVerification({ setPage }: Props) {
       setOutcome('not-found');
       setMessage(result.error.message);
       setSource('live');
-    } else {
-      // API offline: the prototype's original behaviour, with the sample credential.
+    } else if (isPreviewMode()) {
+      // Design preview only: the prototype's original behaviour, with the sample credential.
       setCard(walletData);
       setLedger(null);
       setOutcome(code.length > 3 ? 'verified' : 'not-found');
       setMessage('Please check the ID and try again');
       setSource('demo');
+    } else {
+      setCard(null);
+      setLedger(null);
+      setOutcome('offline');
+      setMessage('The verification service can’t be reached right now. Please try again in a few minutes.');
+      setSource(null);
     }
   };
   const handleVerify = () => verify(verifyCode);
 
-  // Shared links look like ...?code=K7Q2-M9XD-4PLA. Check them straight away.
+  // Shared links look like /verify/K7Q2-M9XD-4PLA (or ?code=...). Check them straight away.
   useEffect(() => {
-    const code = new URLSearchParams(window.location.search).get('code');
+    const fromPath = window.location.pathname.match(/^\/verify\/([A-Za-z0-9-]+)/)?.[1];
+    const code = fromPath ?? new URLSearchParams(window.location.search).get('code');
     if (code) {
       setVerifyCode(code);
       verify(code);
@@ -143,7 +151,7 @@ export default function PublicVerification({ setPage }: Props) {
             onClick={() => setPage('login')}
             className="text-sm text-gray-500 hover:text-gray-800 font-body px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors"
           >
-            Sign In →
+            {isPreviewMode() ? '← Back' : 'Sign In →'}
           </button>
         </div>
       </div>
@@ -190,7 +198,7 @@ export default function PublicVerification({ setPage }: Props) {
               <span className="text-xl">{outcome === 'verified' ? '✅' : outcome === 'unverified' ? '⚠️' : '❌'}</span>
               <div>
                 <div className={`text-sm font-semibold font-body ${outcome === 'verified' ? 'text-emerald-800' : outcome === 'unverified' ? 'text-yellow-800' : 'text-red-800'}`}>
-                  {outcome === 'verified' ? 'Credential Verified' : outcome === 'unverified' ? 'Credential Could Not Be Verified' : 'Credential Not Found'}
+                  {outcome === 'verified' ? 'Credential Verified' : outcome === 'unverified' ? 'Credential Could Not Be Verified' : outcome === 'offline' ? 'Service unavailable' : 'Credential Not Found'}
                 </div>
                 <div className={`text-xs font-body ${outcome === 'verified' ? 'text-emerald-600' : outcome === 'unverified' ? 'text-yellow-700' : 'text-red-600'}`}>
                   {ledger
@@ -277,9 +285,9 @@ export default function PublicVerification({ setPage }: Props) {
             </div>
 
             <div className="border-t border-[#F0F2F7] pt-4 flex items-center justify-between text-xs text-gray-400 font-body">
-              <span>Verified by Digital Skills Wallet Platform · Northview Secondary School</span>
+              <span>Issued by {walletData.school} · Digital Skills Wallet</span>
               <span className="font-mono">
-                {ledger?.reachable ? `⛓ Hyperledger Fabric · ${ledger.transactions} transactions checked` : 'Hash: 0x9f2a...4c71'}
+                {ledger?.reachable ? `⛓ Hyperledger Fabric · ${ledger.transactions} transactions checked` : isPreviewMode() ? 'Hash: 0x9f2a...4c71' : 'Blockchain check unavailable right now'}
               </span>
             </div>
           </div>
