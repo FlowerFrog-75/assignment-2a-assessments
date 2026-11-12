@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import type { Page } from '../types';
 import DataSourceBadge from '../components/DataSourceBadge';
-import { useApiData } from '../lib/api';
+import { apiGet, apiPost, useApiData } from '../lib/api';
+import TemplateFormModal, { type TemplateCard, type TemplateDetail, type TemplateOptions } from '../components/TemplateFormModal';
+import LaunchModal from '../components/LaunchModal';
+import QuestionBankModal, { type ItemRecord } from '../components/QuestionBankModal';
 
 interface Props { setPage: (p: Page) => void; }
 
@@ -105,13 +108,88 @@ const mockLibrary = {
   templates,
 };
 
+// Demo choices for the New Template form, used when the API isn't running.
+// The live version comes from GET /api/templates/options.
+const mockOptions: TemplateOptions = {
+  skills: [
+    'Critical Thinking',
+    'Analytical Thinking',
+    'Research',
+    'Collaboration',
+    'Decision-Making',
+    'Creativity',
+    'Adaptability / Growth Mindset',
+  ].map((name) => ({ key: name, name })),
+  difficulties: ['foundation', 'intermediate', 'advanced'],
+  complexity: { min: 1, max: 5 },
+};
+
+/** Rebuild the form's starting values from a list card (demo mode has no fuller record). */
+function cardToDetail(t: TemplateCard): TemplateDetail {
+  const years = t.grade.match(/(\d+)\D+(\d+)/);
+  return {
+    id: t.id,
+    title: t.title,
+    description: '',
+    subject: t.subject,
+    yearLevels: { min: Number(years?.[1] ?? 9), max: Number(years?.[2] ?? 10) },
+    skills: t.skills,
+    difficulty: t.difficulty.toLowerCase(),
+    status: t.status.toLowerCase(),
+    durationMinutes: parseInt(t.duration, 10) || 45,
+    blueprint: [],
+    attempts: 0,
+  };
+}
+
 export default function AssessmentTemplatePage({ setPage }: Props) {
   const library = useApiData('/templates', mockLibrary);
+  const options = useApiData('/templates/options', mockOptions);
   const { stats, templates } = library.data;
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('All');
+  const [form, setForm] = useState<{ initial?: TemplateDetail } | null>(null);
+  const [launching, setLaunching] = useState<TemplateCard | null>(null);
+  const [showBank, setShowBank] = useState(false);
+  const [demoList, setDemoList] = useState<TemplateCard[] | null>(null); // demo mode only
+  const [demoItems, setDemoItems] = useState<ItemRecord[]>([]); // demo mode only
+  const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  const live = library.source === 'live' && options.source === 'live';
+  const allTemplates: TemplateCard[] = live ? templates : (demoList ?? templates);
 
-  const filtered = templates.filter((t) => {
+  /** After a save. Live: reload from the server. Demo: add or replace the card here. */
+  function handleSaved(card: TemplateCard | null, message: string) {
+    setForm(null);
+    if (card) {
+      const base = demoList ?? templates;
+      const old = base.find((t) => t.id === card.id);
+      setDemoList(old ? base.map((t) => (t.id === card.id ? { ...card, lastUsed: old.lastUsed, completions: old.completions } : t)) : [card, ...base]);
+    } else {
+      library.reload();
+    }
+    setNotice({ kind: 'ok', text: message });
+  }
+
+  async function openEdit(t: TemplateCard) {
+    setNotice(null);
+    if (!live) return setForm({ initial: cardToDetail(t) });
+    const result = await apiGet<TemplateDetail>(`/templates/${t.id}`);
+    if (result.kind === 'ok') setForm({ initial: result.data });
+    else setNotice({ kind: 'error', text: result.kind === 'error' ? result.error.message : `Couldn’t open the template: ${result.reason}.` });
+  }
+
+  async function duplicate(t: TemplateCard) {
+    setNotice(null);
+    const name = `Copy of ${t.title}`;
+    if (!live) {
+      return handleSaved({ ...t, id: `local-${Date.now()}`, title: name, status: 'Draft', lastUsed: 'Never', completions: 0 }, `Created “${name}” as a draft. (Demo only: not saved.)`);
+    }
+    const result = await apiPost<{ id: string }>(`/templates/${t.id}/duplicate`, {});
+    if (result.kind === 'ok') handleSaved(null, `Created “${name}” as a draft.`);
+    else setNotice({ kind: 'error', text: result.kind === 'error' ? result.error.message : `Couldn’t duplicate: ${result.reason}.` });
+  }
+
+  const filtered = allTemplates.filter((t) => {
     const matchSearch = t.title.toLowerCase().includes(search.toLowerCase()) || t.subject.toLowerCase().includes(search.toLowerCase());
     const matchFilter = filter === 'All' || t.status === filter || t.difficulty === filter;
     return matchSearch && matchFilter;
@@ -128,13 +206,25 @@ export default function AssessmentTemplatePage({ setPage }: Props) {
             <DataSourceBadge source={library.source} reason={library.offlineReason} />
           </div>
           <h1 className="font-display font-700 text-2xl text-gray-900">Assessment Templates</h1>
-          <p className="text-sm text-gray-500 font-body mt-0.5">{templates.length} templates available across all subjects</p>
+          <p className="text-sm text-gray-500 font-body mt-0.5">{allTemplates.length} templates available across all subjects</p>
         </div>
-        <button className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold font-body transition-all shadow-sm shadow-purple-200 active:scale-95">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
-          New Template
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowBank(true)} className="px-4 py-2.5 rounded-xl border border-[#E8EAF0] bg-white text-gray-700 hover:border-purple-200 hover:text-purple-700 text-sm font-semibold font-body transition-all">
+            Question bank
+          </button>
+          <button onClick={() => { setNotice(null); setForm({}); }} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold font-body transition-all shadow-sm shadow-purple-200 active:scale-95">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
+            New Template
+          </button>
+        </div>
       </div>
+
+      {notice && (
+        <div role={notice.kind === 'error' ? 'alert' : 'status'} className={`mb-4 flex items-center justify-between rounded-xl border text-sm font-body px-4 py-2.5 ${notice.kind === 'error' ? 'bg-red-50 border-red-100 text-red-700' : 'bg-emerald-50 border-emerald-100 text-emerald-800'}`}>
+          <span>{notice.text}</span>
+          <button onClick={() => setNotice(null)} aria-label="Dismiss" className="px-1 opacity-70 hover:opacity-100">×</button>
+        </div>
+      )}
 
       {/* Stats row */}
       <div className="grid grid-cols-4 gap-4 mb-6">
@@ -235,21 +325,54 @@ export default function AssessmentTemplatePage({ setPage }: Props) {
             {/* Actions */}
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setPage('assessment-interface')}
-                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg py-2 text-xs font-semibold font-body transition-all"
+                onClick={() => { setNotice(null); setLaunching(t); }}
+                disabled={t.status !== 'Published'}
+                title={t.status === 'Published' ? undefined : 'Publish this template before launching it'}
+                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg py-2 text-xs font-semibold font-body transition-all disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed"
               >
                 Launch Assessment
               </button>
-              <button className="px-3 py-2 rounded-lg border border-[#E8EAF0] text-gray-500 hover:border-purple-200 hover:text-purple-600 text-xs font-medium font-body transition-all">
+              <button
+                onClick={() => setPage('assessment-interface')}
+                className="px-3 py-2 rounded-lg border border-[#E8EAF0] text-gray-500 hover:border-purple-200 hover:text-purple-600 text-xs font-medium font-body transition-all"
+              >
+                Preview
+              </button>
+              <button
+                onClick={() => openEdit(t)}
+                className="px-3 py-2 rounded-lg border border-[#E8EAF0] text-gray-500 hover:border-purple-200 hover:text-purple-600 text-xs font-medium font-body transition-all"
+              >
                 Edit
               </button>
-              <button className="px-3 py-2 rounded-lg border border-[#E8EAF0] text-gray-500 hover:border-purple-200 hover:text-purple-600 text-xs font-medium font-body transition-all">
+              <button
+                onClick={() => duplicate(t)}
+                className="px-3 py-2 rounded-lg border border-[#E8EAF0] text-gray-500 hover:border-purple-200 hover:text-purple-600 text-xs font-medium font-body transition-all"
+              >
                 Duplicate
               </button>
             </div>
           </div>
         ))}
       </div>
+
+      {form && (
+        <TemplateFormModal options={options.data} live={live} initial={form.initial} onClose={() => setForm(null)} onSaved={handleSaved} />
+      )}
+      {launching && (
+        <LaunchModal
+          template={launching}
+          live={live}
+          onClose={() => setLaunching(null)}
+          onLaunched={(message) => {
+            setLaunching(null);
+            library.reload();
+            setNotice({ kind: 'ok', text: message });
+          }}
+        />
+      )}
+      {showBank && (
+        <QuestionBankModal options={options.data} live={live} demoItems={demoItems} onDemoItemsChange={setDemoItems} onClose={() => setShowBank(false)} />
+      )}
     </div>
   );
 }
