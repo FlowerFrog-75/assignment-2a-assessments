@@ -100,6 +100,34 @@ export async function apiSend<T = { ok: true }>(method: 'POST' | 'PUT' | 'PATCH'
   throw new ApiRequestError(result.error.status, result.error.code, result.error.message);
 }
 
+/** Send a JSON body to /api/<path>. Never throws, same result shape as apiGet. */
+export async function apiSend<T>(method: 'POST' | 'PUT', path: string, body: unknown): Promise<ApiResult<T>> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const response = await fetch(`${API_BASE}/api${path}`, {
+      method,
+      signal: controller.signal,
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!response.headers.get('content-type')?.includes('application/json')) {
+      return { kind: 'offline', reason: 'The API server is not running' };
+    }
+    const data = await response.json();
+    if (response.ok) return { kind: 'ok', data: data as T };
+    if (response.status === 503) return { kind: 'offline', reason: data.message ?? 'The database is not reachable' };
+    return { kind: 'error', error: { status: response.status, code: data.error ?? 'error', message: data.message ?? 'Request failed' } };
+  } catch {
+    return { kind: 'offline', reason: 'The API server is not reachable' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export const apiPost = <T>(path: string, body: unknown) => apiSend<T>('POST', path, body);
+export const apiPut = <T>(path: string, body: unknown) => apiSend<T>('PUT', path, body);
+
 // Requests still running, by path. Identical requests share one fetch, so a
 // screen mounting twice (React's StrictMode does this in development) doesn't
 // call the API twice, or write two audit-log entries for one view.
