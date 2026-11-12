@@ -56,6 +56,12 @@ const assessmentTemplateSchema = new Schema(
     status: { type: String, enum: TEMPLATE_STATUSES, default: "draft" },
     durationMinutes: { type: Number, required: true, min: 1, max: 300 },
     blueprint: { type: [blueprintRowSchema], default: [] },
+    /**
+     * A fixed paper: these approved items, in this order, for every student.
+     * When this is not empty the engine uses it and ignores `blueprint`.
+     * When it is empty the engine draws questions from the bank using the blueprint.
+     */
+    questions: { type: [{ type: Schema.Types.ObjectId, ref: "AssessmentItem" }], default: [] },
     assignments: { type: [assignmentSchema], default: [] },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     publishedAt: { type: Date },
@@ -64,7 +70,8 @@ const assessmentTemplateSchema = new Schema(
     timestamps: true,
     virtuals: {
       questionCount: {
-        get(this: { blueprint?: { count: number }[] }) {
+        get(this: { blueprint?: { count: number }[]; questions?: unknown[] }) {
+          if (this.questions && this.questions.length > 0) return this.questions.length;
           return (this.blueprint ?? []).reduce((total, row) => total + row.count, 0);
         },
       },
@@ -80,8 +87,8 @@ assessmentTemplateSchema.pre("validate", function () {
       this.invalidate("blueprint", `Blueprint skill "${row.skill}" is not one of the template's skills`);
     }
   }
-  if (this.status === "published" && this.blueprint.length === 0) {
-    this.invalidate("blueprint", "A published template needs at least one blueprint row");
+  if (this.status === "published" && this.blueprint.length === 0 && this.questions.length === 0) {
+    this.invalidate("questions", "A published template needs at least one question or blueprint row");
   }
   if (this.yearLevels && this.yearLevels.min > this.yearLevels.max) {
     this.invalidate("yearLevels", "yearLevels.min must not be greater than yearLevels.max");
