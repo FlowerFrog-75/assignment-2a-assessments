@@ -1,7 +1,7 @@
 // Routes behind the teacher screens: Class Results, Assessment Templates and
 // Access Logs. Each returns the same shape as the mock data in its src/pages file.
 import { Router, type Request } from "express";
-import { isValidObjectId } from "mongoose";
+import { isValidObjectId, Types } from "mongoose";
 import { DIFFICULTY_LEVELS, MAX_COMPLEXITY, MIN_COMPLEXITY, SKILLS, type SkillKey } from "../db/constants";
 import {
   AssessmentAttemptModel,
@@ -156,6 +156,14 @@ async function findTemplate(id: string) {
   return template;
 }
 
+async function requireTemplateOwnership(req: Request, template: Awaited<ReturnType<typeof findTemplate>>) {
+  const user = currentUser(req);
+
+  if (user.role !== "admin" && !template.createdBy.equals(user._id)) {
+    throw new ApiError(403, "forbidden", "You can only modify templates you created");
+  }
+}
+
 /** The fields a request may set on a template. Everything else (createdBy, assignments...) is ignored. */
 function templateFields(b: Record<string, any>) {
   return {
@@ -218,8 +226,8 @@ async function validateTemplateQuestions(
   return ids;
 }
 
-async function auditTemplate(req: Request, teacherId: Awaited<ReturnType<typeof demoTeacher>>["_id"], action: string, label: string) {
-  await appendAuditLog({
+async function auditTemplate(req: Request, teacherId: Types.ObjectId, action: string, label: string) {
+    await appendAuditLog({
     actor: teacherId,
     actorRole: "teacher",
     action,
@@ -240,16 +248,26 @@ teacherRoutes.get("/templates/options", (_req, res) => {
 });
 
 /** The teacher's classes, for the Launch form. */
-teacherRoutes.get("/classes", async (_req, res) => {
-  const teacher = await demoTeacher();
-  const classes = await ClassGroupModel.find({ teachers: teacher._id, archived: false }).sort({ createdAt: 1 });
-  res.json(classes.map((c) => ({ id: c._id.toString(), name: c.name, yearLevel: c.yearLevel, students: c.students.length })));
+teacherRoutes.get("/classes", requireAuth(), requireRole("teacher", "admin"), async (req, res) => {
+  const teacher = currentUser(req);
+  const classes = await ClassGroupModel.find({
+    teachers: teacher._id,
+    archived: false,
+  }).sort({ createdAt: 1 });
+
+  res.json(classes.map((c) => ({
+    id: c._id.toString(),
+    name: c.name,
+    yearLevel: c.yearLevel,
+    students: c.students.length,
+  })));
 });
 
 /** Create a template (as a draft or published). */
-teacherRoutes.post("/templates", async (req, res) => {
-  const teacher = await demoTeacher();
+teacherRoutes.post("/templates", requireAuth(), requireRole("teacher", "admin"), async (req, res) => {
+  const teacher = currentUser(req);
   const b = (req.body ?? {}) as Record<string, any>;
+
   try {
     const questions = await validateTemplateQuestions(
       b.questions ?? [],
@@ -274,8 +292,8 @@ teacherRoutes.post("/templates", async (req, res) => {
 });
 
 /** One template in full, for the Edit form. */
-teacherRoutes.get("/templates/:id", async (req, res) => {
-  const t = await findTemplate(req.params.id);
+teacherRoutes.get("/templates/:id", requireAuth(), requireRole("teacher", "admin"), async (req, res) => {
+  const t = await findTemplate(String(req.params.id));
   const attempts = await AssessmentAttemptModel.countDocuments({ template: t._id });
   res.json({
     id: t._id.toString(),
@@ -297,9 +315,10 @@ teacherRoutes.get("/templates/:id", async (req, res) => {
  * Edit a template. Once students have attempted it, only the title and
  * description can change: the questions and timing must stay as they sat them.
  */
-teacherRoutes.put("/templates/:id", async (req, res) => {
-  const teacher = await demoTeacher();
-  const t = await findTemplate(req.params.id);
+teacherRoutes.put("/templates/:id", requireAuth(), requireRole("teacher", "admin"), async (req, res) => {
+  const teacher = currentUser(req);
+  const t = await findTemplate(String(req.params.id));
+  await requireTemplateOwnership(req, t);
   const b = (req.body ?? {}) as Record<string, any>;
   const attempts = await AssessmentAttemptModel.countDocuments({ template: t._id });
   const wasPublished = t.status === "published";
@@ -309,11 +328,13 @@ teacherRoutes.put("/templates/:id", async (req, res) => {
     if (b.description !== undefined) t.description = b.description;
   } else {
     const questions = b.questions === undefined
-  ? t.questions
-  : await validateTemplateQuestions(b.questions, b.subject, b.skills);
+      ? t.questions
+      : await validateTemplateQuestions(b.questions, b.subject, b.skills);
 
-t.set(templateFields({ ...b, questions }));
+    t.set(templateFields({ ...b, questions }));
+
     if (b.status === "published") t.status = "published";
+
     if (b.status === "draft") {
       if (t.assignments.length > 0) {
         throw new ApiError(409, "template_assigned", "This template is assigned to a class, so it can't go back to draft.");
@@ -327,28 +348,41 @@ t.set(templateFields({ ...b, questions }));
   } catch (err) {
     rethrow(err, "invalid_template");
   }
-  if (!wasPublished && t.status === "published") await auditTemplate(req, teacher._id, "template.publish", `Published “${t.title}”`);
+
+  if (!wasPublished && t.status === "published") {
+    await auditTemplate(req, teacher._id, "template.publish", `Published “${t.title}”`);
+  }
+
   res.json({ id: t._id.toString(), status: t.status });
 });
 
 /** Copy a template as a new draft. Class assignments and attempts are not copied. */
-teacherRoutes.post("/templates/:id/duplicate", async (req, res) => {
-  const teacher = await demoTeacher();
-  const src = await findTemplate(req.params.id);
+teacherRoutes.post("/templates/:id/duplicate", requireAuth(), requireRole("teacher", "admin"), async (req, res) => {
+  const teacher = currentUser(req);
+  const src = await findTemplate(String(req.params.id));
+  await requireTemplateOwnership(req, src);
+  
   try {
     const copy = await AssessmentTemplateModel.create({
       title: `Copy of ${src.title}`.slice(0, 200),
       description: src.description,
       subject: src.subject,
       yearLevels: { min: src.yearLevels!.min, max: src.yearLevels!.max },
-      curriculumLink: src.curriculumLink?.code ? { code: src.curriculumLink.code, description: src.curriculumLink.description } : undefined,
+      curriculumLink: src.curriculumLink?.code
+        ? { code: src.curriculumLink.code, description: src.curriculumLink.description }
+        : undefined,
       skills: [...src.skills],
       difficulty: src.difficulty,
       durationMinutes: src.durationMinutes,
-      blueprint: src.blueprint.map((r) => ({ skill: r.skill, complexity: r.complexity, count: r.count })),
+      blueprint: src.blueprint.map((r) => ({
+        skill: r.skill,
+        complexity: r.complexity,
+        count: r.count,
+      })),
       status: "draft",
       createdBy: teacher._id,
     });
+
     res.status(201).json({ id: copy._id.toString() });
   } catch (err) {
     rethrow(err, "invalid_template");
@@ -360,9 +394,9 @@ teacherRoutes.post("/templates/:id/duplicate", async (req, res) => {
  * due date. Refuses if the item bank can't fill the blueprint, so students are
  * never given an assessment that can't be built.
  */
-teacherRoutes.post("/templates/:id/launch", async (req, res) => {
-  const teacher = await demoTeacher();
-  const t = await findTemplate(req.params.id);
+teacherRoutes.post("/templates/:id/launch", requireAuth(), requireRole("teacher", "admin"), async (req, res) => {
+  const teacher = currentUser(req);
+  const t = await findTemplate(String(req.params.id));
   const b = (req.body ?? {}) as Record<string, any>;
 
   if (t.status !== "published") throw new ApiError(409, "template_not_published", "Publish this template before launching it.");
@@ -526,7 +560,7 @@ function assertMarkable(item: ItemDoc) {
 }
 
 /** How many approved questions exist per skill and complexity for a subject. Used to warn while building a blueprint. */
-teacherRoutes.get("/items/availability", async (req, res) => {
+teacherRoutes.get("/items/availability", requireAuth(), requireRole("teacher", "admin"), async (req, res) => {
   const subject = String(req.query.subject ?? "").trim();
   if (!subject) return res.json([]);
   const rows = await AssessmentItemModel.aggregate<{ _id: { skill: string; complexity: number }; count: number }>([
@@ -537,7 +571,7 @@ teacherRoutes.get("/items/availability", async (req, res) => {
 });
 
 /** The question bank, newest first, with answers (this is the teacher's view). */
-teacherRoutes.get("/items", async (req, res) => {
+teacherRoutes.get("/items", requireAuth(), requireRole("teacher", "admin"), async (req, res) => {
   const filter: Record<string, unknown> = {};
   const subject = String(req.query.subject ?? "").trim();
   if (subject) filter.subject = new RegExp(escapeRegExp(subject), "i");
@@ -551,8 +585,8 @@ teacherRoutes.get("/items", async (req, res) => {
 });
 
 /** Write a question: multiple choice or short response. Saved as a draft, or approved straight away. */
-teacherRoutes.post("/items", async (req, res) => {
-  const teacher = await demoTeacher();
+teacherRoutes.post("/items", requireAuth(), requireRole("teacher", "admin"), async (req, res) => {
+  const teacher = currentUser(req);
   const b = (req.body ?? {}) as Record<string, any>;
   const approved = b.status === "approved";
   const item = new AssessmentItemModel({
@@ -576,11 +610,11 @@ teacherRoutes.post("/items", async (req, res) => {
  * Edit a question. Once it has been used in an attempt, its content is locked
  * (results were marked against it); only its status can change, so it can be retired.
  */
-teacherRoutes.put("/items/:id", async (req, res) => {
-  const teacher = await demoTeacher();
+teacherRoutes.put("/items/:id", requireAuth(), requireRole("teacher", "admin"), async (req, res) => {
+  const teacher = currentUser(req);
 
   const item = await AssessmentItemModel.findById(
-    checkId(req.params.id, "item")
+    checkId(String(req.params.id), "item")
   ).select("+answer");
 
   if (!item) {

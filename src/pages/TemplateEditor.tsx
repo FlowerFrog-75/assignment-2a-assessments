@@ -52,8 +52,8 @@ const blank: Template = {
 export default function TemplateEditor({ setPage }: Props) {
   const id = selectedTemplate();
   const isNew = !id || id === 'new';
-  const loaded = useApiData<Template>(isNew ? null : `/templates/${id}`, blank);
-  const subjects = useApiData<{ subjects: string[] }>('/items?status=approved', { subjects: [] });
+  const loaded = useApiData<Template>(isNew ? null : `/teaching/templates/${id}`, blank);
+  const subjects = useApiData<{ subjects: string[] }>('/teaching/items?status=approved', { subjects: [] });
   const [form, setForm] = useState<Template>(blank);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'green' | 'red' | 'amber'; text: string } | null>(null);
@@ -72,7 +72,7 @@ export default function TemplateEditor({ setPage }: Props) {
   const refreshAvailability = async (next: Template) => {
     // The server works out how many approved questions each row can draw from.
     if (!next.id) return;
-    const result = await apiGet<Template>(`/templates/${next.id}`);
+    const result = await apiGet<Template>(`/teaching/templates/${next.id}`);
     if (result.kind === 'ok') setForm(result.data);
   };
 
@@ -94,14 +94,14 @@ export default function TemplateEditor({ setPage }: Props) {
     setNotice(null);
     try {
       if (isNew) {
-        const created = await apiSend<{ id: string }>('POST', '/templates', body());
+        const created = await apiSend<{ id: string }>('POST', '/teaching/templates', body());
         selectTemplate(created.id);
-        const result = await apiGet<Template>(`/templates/${created.id}`);
+        const result = await apiGet<Template>(`/teaching/templates/${created.id}`);
         if (result.kind === 'ok') setForm(result.data);
         setNotice({ tone: 'green', text: 'Template saved as a draft. Publish it when the questions are ready, then assign it to a class.' });
         setPage('template-editor');
       } else {
-        await apiSend('PUT', `/templates/${form.id}`, body());
+        await apiSend('PUT', `/teaching/templates/${form.id}`, body());
         await refreshAvailability(form);
         setNotice({ tone: 'green', text: 'Saved.' });
       }
@@ -116,8 +116,8 @@ export default function TemplateEditor({ setPage }: Props) {
     setBusy(true);
     setNotice(null);
     try {
-      await apiSend('PUT', `/templates/${form.id}`, body());
-      await apiSend('POST', `/templates/${form.id}/status`, { status });
+      await apiSend('PUT', `/teaching/templates/${form.id}`, body());
+      await apiSend('POST', `/teaching/templates/${form.id}/status`, { status });
       await refreshAvailability(form);
       setNotice({ tone: 'green', text: status === 'published' ? 'Published. Now assign it to a class below.' : status === 'archived' ? 'Archived.' : 'Moved back to draft.' });
     } catch (err) {
@@ -131,7 +131,7 @@ export default function TemplateEditor({ setPage }: Props) {
     setBusy(true);
     setNotice(null);
     try {
-      await apiSend('PUT', `/templates/${form.id}/assignments/${classId}`, { dueAt: due || null });
+      await apiSend('PUT', `/teaching/templates/${form.id}/assignments/${classId}`, { dueAt: due || null });
       await refreshAvailability(form);
       setAssignClass('');
       setAssignDue('');
@@ -146,7 +146,7 @@ export default function TemplateEditor({ setPage }: Props) {
   const unassign = async (classId: string) => {
     if (!window.confirm('Remove this assessment from the class? Students who already started keep their attempt.')) return;
     try {
-      await apiSend('DELETE', `/templates/${form.id}/assignments/${classId}`);
+      await apiSend('DELETE', `/teaching/templates/${form.id}/assignments/${classId}`);
       await refreshAvailability(form);
     } catch (err) {
       setNotice({ tone: 'red', text: err instanceof ApiRequestError ? err.message : 'Could not unassign' });
@@ -155,9 +155,9 @@ export default function TemplateEditor({ setPage }: Props) {
 
   const duplicate = async () => {
     try {
-      const copy = await apiSend<{ id: string }>('POST', `/templates/${form.id}/duplicate`);
+      const copy = await apiSend<{ id: string }>('POST', `/teaching/templates/${form.id}/duplicate`);
       selectTemplate(copy.id);
-      const result = await apiGet<Template>(`/templates/${copy.id}`);
+      const result = await apiGet<Template>(`/teaching/templates/${copy.id}`);
       if (result.kind === 'ok') setForm(result.data);
       setNotice({ tone: 'green', text: 'Copy created as a draft.' });
     } catch (err) {
@@ -278,7 +278,7 @@ export default function TemplateEditor({ setPage }: Props) {
                   onClick={async () => {
                     setNotice(null);
                     try {
-                      await apiSend('PUT', `/templates/${form.id}`, body());
+                      await apiSend('PUT', `/teaching/templates/${form.id}`, body());
                       const result = await apiSend<{ jobId: string }>('POST', `/ai/templates/${form.id}/fill`);
                       setAiJob(result.jobId);
                     } catch (err) {

@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import type { Page } from '../types';
 import DataSourceBadge from '../components/DataSourceBadge';
-import { apiSend, ApiRequestError, selectTemplate, useApiData } from '../lib/api';
-import { Alert, PageStatus } from '../components/ui';
-import { apiGet, apiPost, useApiData } from '../lib/api';
+import { apiGet, apiPost, selectTemplate, useApiData } from '../lib/api';
+import { PageStatus } from '../components/ui';
 import TemplateFormModal, { type TemplateCard, type TemplateDetail, type TemplateOptions } from '../components/TemplateFormModal';
 import LaunchModal from '../components/LaunchModal';
 import QuestionBankModal, { type ItemRecord } from '../components/QuestionBankModal';
@@ -146,66 +145,110 @@ function cardToDetail(t: TemplateCard): TemplateDetail {
 
 export default function AssessmentTemplatePage({ setPage }: Props) {
   const library = useApiData('/templates', mockLibrary);
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('All');
-  const [error, setError] = useState<string | null>(null);
-  if (!library.ready) return <PageStatus error={library.error} onRetry={library.reload} />;
-  const { stats, templates } = library.data;
-  const open = (id: string) => {
-    selectTemplate(id);
-    setPage('template-editor');
-  };
-  const duplicate = async (id: string) => {
-    try {
-      const copy = await apiSend<{ id: string }>('POST', `/templates/${id}/duplicate`);
-      open(copy.id);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not duplicate');
-    }
-  };
   const options = useApiData('/templates/options', mockOptions);
-  const { stats, templates } = library.data;
+
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('All');
   const [form, setForm] = useState<{ initial?: TemplateDetail } | null>(null);
   const [launching, setLaunching] = useState<TemplateCard | null>(null);
   const [showBank, setShowBank] = useState(false);
-  const [demoList, setDemoList] = useState<TemplateCard[] | null>(null); // demo mode only
-  const [demoItems, setDemoItems] = useState<ItemRecord[]>([]); // demo mode only
+  const [demoList, setDemoList] = useState<TemplateCard[] | null>(null);
+  const [demoItems, setDemoItems] = useState<ItemRecord[]>([]);
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+
+  if (!library.ready) {
+    return <PageStatus error={library.error} onRetry={library.reload} />;
+  }
+
+  const { stats, templates } = library.data;
   const live = library.source === 'live' && options.source === 'live';
   const allTemplates: TemplateCard[] = live ? templates : (demoList ?? templates);
 
-  /** After a save. Live: reload from the server. Demo: add or replace the card here. */
+  const open = (id: string) => {
+    selectTemplate(id);
+    setPage('template-editor');
+  };
+
   function handleSaved(card: TemplateCard | null, message: string) {
     setForm(null);
+
     if (card) {
       const base = demoList ?? templates;
       const old = base.find((t) => t.id === card.id);
-      setDemoList(old ? base.map((t) => (t.id === card.id ? { ...card, lastUsed: old.lastUsed, completions: old.completions } : t)) : [card, ...base]);
+
+      setDemoList(
+        old
+          ? base.map((t) =>
+              t.id === card.id
+                ? { ...card, lastUsed: old.lastUsed, completions: old.completions }
+                : t,
+            )
+          : [card, ...base],
+      );
     } else {
       library.reload();
     }
+
     setNotice({ kind: 'ok', text: message });
   }
 
   async function openEdit(t: TemplateCard) {
     setNotice(null);
-    if (!live) return setForm({ initial: cardToDetail(t) });
+
+    if (!live) {
+      setForm({ initial: cardToDetail(t) });
+      return;
+    }
+
     const result = await apiGet<TemplateDetail>(`/templates/${t.id}`);
-    if (result.kind === 'ok') setForm({ initial: result.data });
-    else setNotice({ kind: 'error', text: result.kind === 'error' ? result.error.message : `Couldn’t open the template: ${result.reason}.` });
+
+    if (result.kind === 'ok') {
+      setForm({ initial: result.data });
+    } else {
+      setNotice({
+        kind: 'error',
+        text: result.kind === 'error'
+          ? result.error.message
+          : `Couldn’t open the template: ${result.reason}.`,
+      });
+    }
   }
 
   async function duplicate(t: TemplateCard) {
     setNotice(null);
+
     const name = `Copy of ${t.title}`;
+
     if (!live) {
-      return handleSaved({ ...t, id: `local-${Date.now()}`, title: name, status: 'Draft', lastUsed: 'Never', completions: 0 }, `Created “${name}” as a draft. (Demo only: not saved.)`);
+      handleSaved(
+        {
+          ...t,
+          id: `local-${Date.now()}`,
+          title: name,
+          status: 'Draft',
+          lastUsed: 'Never',
+          completions: 0,
+        },
+        `Created “${name}” as a draft. (Demo only: not saved.)`,
+      );
+      return;
     }
-    const result = await apiPost<{ id: string }>(`/templates/${t.id}/duplicate`, {});
-    if (result.kind === 'ok') handleSaved(null, `Created “${name}” as a draft.`);
-    else setNotice({ kind: 'error', text: result.kind === 'error' ? result.error.message : `Couldn’t duplicate: ${result.reason}.` });
+
+    const result = await apiPost<{ id: string }>(
+      `/templates/${t.id}/duplicate`,
+      {},
+    );
+
+    if (result.kind === 'ok') {
+      handleSaved(null, `Created “${name}” as a draft.`);
+    } else {
+      setNotice({
+        kind: 'error',
+        text: result.kind === 'error'
+          ? result.error.message
+          : `Couldn’t duplicate: ${result.reason}.`,
+      });
+    }
   }
 
   const filtered = allTemplates.filter((t) => {
@@ -236,10 +279,6 @@ export default function AssessmentTemplatePage({ setPage }: Props) {
             New Template
           </button>
         </div>
-        <button onClick={() => open('new')} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold font-body transition-all shadow-sm shadow-purple-200 active:scale-95">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
-          New Template
-        </button>
       </div>
 
       {notice && (
@@ -294,7 +333,6 @@ export default function AssessmentTemplatePage({ setPage }: Props) {
         ))}
       </div>
 
-      {error && <div className="mb-4"><Alert>{error}</Alert></div>}
       {templates.length === 0 && (
         <div className="bg-white rounded-xl border border-[#E8EAF0] p-10 text-center text-sm text-gray-500 font-body">
           No assessment templates yet. Create one with “New Template”: choose the skills, then how many questions to draw from the question bank.
@@ -361,7 +399,8 @@ export default function AssessmentTemplatePage({ setPage }: Props) {
               >
                 {t.status === 'Published' ? 'Open & assign' : 'Edit'}
               </button>
-              <button onClick={(e) => { e.stopPropagation(); duplicate(t.id); }} className="px-3 py-2 rounded-lg border border-[#E8EAF0] text-gray-500 hover:border-purple-200 hover:text-purple-600 text-xs font-medium font-body transition-all">
+
+              <button
                 onClick={() => { setNotice(null); setLaunching(t); }}
                 disabled={t.status !== 'Published'}
                 title={t.status === 'Published' ? undefined : 'Publish this template before launching it'}
@@ -369,18 +408,21 @@ export default function AssessmentTemplatePage({ setPage }: Props) {
               >
                 Launch Assessment
               </button>
+
               <button
                 onClick={() => setPage('assessment-interface')}
                 className="px-3 py-2 rounded-lg border border-[#E8EAF0] text-gray-500 hover:border-purple-200 hover:text-purple-600 text-xs font-medium font-body transition-all"
               >
                 Preview
               </button>
+
               <button
                 onClick={() => openEdit(t)}
                 className="px-3 py-2 rounded-lg border border-[#E8EAF0] text-gray-500 hover:border-purple-200 hover:text-purple-600 text-xs font-medium font-body transition-all"
               >
                 Edit
               </button>
+
               <button
                 onClick={() => duplicate(t)}
                 className="px-3 py-2 rounded-lg border border-[#E8EAF0] text-gray-500 hover:border-purple-200 hover:text-purple-600 text-xs font-medium font-body transition-all"

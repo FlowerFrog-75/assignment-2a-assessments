@@ -79,8 +79,8 @@ function ItemForm({ item, subjects, onClose, onSaved }: { item: Item | null; sub
       answer: { correctOption: form.correctOption, modelAnswer: form.modelAnswer, rubric: form.rubric },
     };
     try {
-      if (item) await apiSend('PUT', `/items/${item.id}`, body);
-      else await apiSend('POST', '/items', body);
+      if (item) await apiSend('PUT', `/teaching/items/${item.id}`, body);
+      else await apiSend('POST', '/teaching/items', body);
       onSaved();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save');
@@ -165,7 +165,7 @@ export default function ItemBank(_: Props) {
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
   const params = new URLSearchParams({ ...(status && { status }), ...(subject && { subject }), ...(skill && { skill }), ...(search && { q: search }) });
-  const items = useApiData(`/items?${params}`, sample);
+  const items = useApiData(`/teaching/items?${params}`, sample);
   const [editing, setEditing] = useState<Item | 'new' | null>(null);
   const [reviewing, setReviewing] = useState<Item | null>(null);
   const [comments, setComments] = useState('');
@@ -182,7 +182,7 @@ export default function ItemBank(_: Props) {
   const review = async (item: Item, decision: 'approve' | 'reject') => {
     setBusy(true);
     try {
-      await apiSend('POST', `/items/${item.id}/review`, { decision, comments });
+      await apiSend('POST', `/teaching/items/${item.id}/review`, { decision, comments });
       setNotice({ tone: 'green', text: decision === 'approve' ? 'Question approved. It can now appear on papers.' : 'Question rejected.' });
       setReviewing(null);
       setComments('');
@@ -197,7 +197,7 @@ export default function ItemBank(_: Props) {
   const retire = async (item: Item) => {
     if (!window.confirm('Retire this question? It won’t be used on new papers. Past results that used it are kept.')) return;
     try {
-      await apiSend('POST', `/items/${item.id}/retire`);
+      await apiSend('POST', `/teaching/items/${item.id}/retire`);
       items.reload();
     } catch (err) {
       setNotice({ tone: 'red', text: err instanceof ApiRequestError ? err.message : 'Could not retire' });

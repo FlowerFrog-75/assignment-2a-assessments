@@ -46,7 +46,7 @@ apiRouter.use(signupRoutes);
 apiRouter.use(publicRoutes);
 apiRouter.use(studentRoutes);
 apiRouter.use(teacherRoutes);
-apiRouter.use(teachingRoutes);
+apiRouter.use("/teaching", teachingRoutes);
 apiRouter.use(aiRoutes);
 apiRouter.use(assessmentRoutes);
 apiRouter.use(adminRoutes);
