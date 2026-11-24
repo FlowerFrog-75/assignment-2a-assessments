@@ -331,6 +331,9 @@ teachingRoutes.post("/templates/:id/duplicate", ...staff, async (req, res) => {
   const me = currentUser(req);
   const source = await AssessmentTemplateModel.findById(objectId(req.params.id, "template")).lean();
   if (!source) throw new ApiError(404, "template_not_found", "Assessment template not found");
+  if (me.role !== "admin" && !source.createdBy.equals(me._id)) {
+    throw new ApiError(403, "forbidden", "You can only duplicate templates you created");
+  }
   const { _id, createdAt, updatedAt, publishedAt, assignments, status, createdBy, ...rest } = source as Record<string, unknown>;
   void [_id, createdAt, updatedAt, publishedAt, assignments, status, createdBy];
   const copy = await AssessmentTemplateModel.create({ ...rest, title: `${source.title} (copy)`.slice(0, 200), status: "draft", createdBy: me._id, assignments: [] });
