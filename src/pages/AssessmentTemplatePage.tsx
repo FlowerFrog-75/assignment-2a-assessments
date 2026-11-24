@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Page } from '../types';
 import DataSourceBadge from '../components/DataSourceBadge';
-import { apiGet, apiPost, selectTemplate, useApiData } from '../lib/api';
+import { apiGet, apiPost, selectAttempt, selectTemplate, useApiData } from '../lib/api';
 import { PageStatus } from '../components/ui';
 import TemplateFormModal, { type TemplateCard, type TemplateDetail, type TemplateOptions } from '../components/TemplateFormModal';
 import LaunchModal from '../components/LaunchModal';
@@ -401,7 +401,13 @@ export default function AssessmentTemplatePage({ setPage }: Props) {
               </button>
 
               <button
-                onClick={() => { setNotice(null); setLaunching(t); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setNotice(null);
+                  selectAttempt('');
+                  selectTemplate(t.id);
+                  setPage('assessment-interface');
+                }}
                 disabled={t.status !== 'Published'}
                 title={t.status === 'Published' ? undefined : 'Publish this template before launching it'}
                 className="flex-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg py-2 text-xs font-semibold font-body transition-all disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed"

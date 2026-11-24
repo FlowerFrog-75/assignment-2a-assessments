@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Page } from '../types';
-import { apiSend, ApiRequestError, isPreviewMode, selectedAttempt, useApiData } from '../lib/api';
+import { apiSend, ApiRequestError, isPreviewMode, selectedAttempt, selectedTemplate, useApiData } from '../lib/api';
 import { PageStatus } from '../components/ui';
 
 interface Props { setPage: (p: Page) => void; }
@@ -118,8 +118,18 @@ const samplePaper: Attempt = {
 
 export default function AssessmentInterface({ setPage }: Props) {
   const attemptId = selectedAttempt();
-  const paper = useApiData<Attempt>(attemptId ? `/me/attempts/${attemptId}` : null, samplePaper);
-  const preview = isPreviewMode();
+  const templateId = selectedTemplate();
+  const designPreview = isPreviewMode();
+  const demo = Boolean(templateId && !attemptId && !designPreview);
+  const paper = useApiData<Attempt>(
+    demo
+      ? `/teaching/templates/${templateId}/preview`
+      : attemptId
+        ? `/me/attempts/${attemptId}`
+        : null,
+    samplePaper,
+  );
+  const preview = designPreview || demo;
   const [current, setCurrent] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [flagged, setFlagged] = useState<Set<string>>(new Set());
@@ -250,12 +260,16 @@ export default function AssessmentInterface({ setPage }: Props) {
       <div className="min-h-screen bg-[#F8F9FC] flex items-center justify-center p-6">
         <div className="text-center max-w-md">
           <div className="text-5xl mb-4">✅</div>
-          <h2 className="font-display font-700 text-2xl text-gray-900 mb-2">Assessment submitted</h2>
+          <h2 className="font-display font-700 text-2xl text-gray-900 mb-2">
+            {demo ? 'Demo completed' : 'Assessment submitted'}
+          </h2>
           <p className="text-gray-500 font-body mb-6">
-            Your answers are saved. Your teacher will check them and release your results. You&apos;ll earn skill coins for your wallet when they do.
+            {demo
+              ? 'You have finished viewing this assessment demo. No answers were saved or submitted.'
+              : "Your answers are saved. Your teacher will check them and release your results. You'll earn skill coins for your wallet when they do."}
           </p>
-          <button onClick={() => setPage('student-assessments')} className="px-5 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold font-body">
-            Back to my assessments
+          <button onClick={() => setPage(demo ? 'assessment-template' : 'student-assessments')} className="px-5 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold font-body">
+            {demo ? 'Back to assessments' : 'Back to my assessments'}
           </button>
         </div>
       </div>
@@ -268,7 +282,9 @@ export default function AssessmentInterface({ setPage }: Props) {
       <div className="bg-white border-b border-[#E8EAF0] px-6 py-3 flex items-center gap-6">
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-purple-500"></div>
-          <span className="text-xs font-mono font-600 text-purple-600 uppercase tracking-widest">Live Assessment</span>
+          <span className="text-xs font-mono font-600 text-purple-600 uppercase tracking-widest">
+            {demo ? 'Assessment Demo' : 'Live Assessment'}
+          </span>
         </div>
         <div className="font-body font-600 text-gray-700 text-sm flex-1 truncate">
           {paper.data.title}
@@ -440,7 +456,7 @@ export default function AssessmentInterface({ setPage }: Props) {
                     onClick={() => setConfirming(true)}
                     className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold font-body transition-all shadow-sm shadow-emerald-200"
                   >
-                    ✅ Submit Assessment
+                    {demo ? 'Finish Demo' : 'Submit Assessment'}
                   </button>
                 )}
               </div>
@@ -451,9 +467,15 @@ export default function AssessmentInterface({ setPage }: Props) {
       {confirming && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
           <div role="dialog" aria-modal="true" className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-            <h2 className="font-display font-bold text-lg text-gray-900 mb-2">Submit your assessment?</h2>
+            <h2 className="font-display font-bold text-lg text-gray-900 mb-2">
+              {demo ? 'Finish this demo?' : 'Submit your assessment?'}
+            </h2>
             <p className="text-sm text-gray-600 font-body mb-2">You&apos;ve answered {answered} of {questions.length} questions{flagged.size ? `, and flagged ${flagged.size} to review` : ''}.</p>
-            <p className="text-sm text-gray-600 font-body mb-5">You can&apos;t change your answers after submitting.</p>
+            <p className="text-sm text-gray-600 font-body mb-5">
+              {demo
+                ? 'This is only a demonstration. Your answers will not be saved or submitted.'
+                : "You can't change your answers after submitting."}
+            </p>
             <div className="flex justify-end gap-2">
               <button onClick={() => setConfirming(false)} className="px-4 py-2 rounded-xl border border-[#E8EAF0] text-sm font-semibold font-body text-gray-700 hover:bg-gray-50">Keep working</button>
               <button onClick={submit} disabled={submitting} className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold font-body disabled:opacity-60">

@@ -19,8 +19,7 @@ const staff: UserRole[] = ['teacher', 'admin'];
 export const PAGES: Record<Exclude<Page, 'login'>, PageInfo> = {
   'student-dashboard': { title: 'Dashboard', section: 'student', icon: '🎓', roles: ['student'], nav: true },
   'student-assessments': { title: 'My Assessments', section: 'student', icon: '✏️', roles: ['student'], nav: true },
-  'assessment-interface': { title: 'Assessment', section: 'student', icon: '✏️', roles: ['student'], fullscreen: true },
-  'results-interface': { title: 'Results', section: 'student', icon: '📊', roles: ['student'], nav: true },
+'assessment-interface': { title: 'Assessment', section: 'student', icon: '✏️', roles: ['student', 'teacher', 'admin'], fullscreen: true },  'results-interface': { title: 'Results', section: 'student', icon: '📊', roles: ['student'], nav: true },
   'digital-wallet': { title: 'Skills Wallet', section: 'student', icon: '💎', roles: ['student'], nav: true },
   privacy: { title: 'Sharing & Privacy', section: 'student', icon: '🔗', roles: ['student'], nav: true },
   'public-verification': { title: 'Verify a Credential', section: 'student', icon: '✅', roles: ['student', 'teacher', 'admin'], fullscreen: true },

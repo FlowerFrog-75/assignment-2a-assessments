@@ -24,7 +24,7 @@ import {
   type UserDocument,
 } from "../db/models";
 import { currentUser, requireAuth, requireRole } from "../auth/session";
-import { blueprintAvailability, computeResult } from "../assessment/engine";
+import { blueprintAvailability, buildPaper, computeResult, newSeed } from "../assessment/engine";
 import { issueRewards, syncLedgerSoon } from "../assessment/coins";
 import { ApiError } from "./data";
 import { draftFeedback, suggestMarks } from "../ai/marking-agent";
@@ -287,6 +287,54 @@ teachingRoutes.post("/templates", ...staff, async (req, res) => {
   const template = await AssessmentTemplateModel.create({ ...templateFields(req.body ?? {}), status: "draft", createdBy: me._id });
   await audit(req, me, "template.create", `Template created: ${template.title}`, { resource: { type: "template", id: template._id.toString() } });
   res.status(201).json({ id: template._id.toString() });
+});
+
+/** GET /api/templates/:id/preview: builds a temporary paper without creating an attempt. */
+teachingRoutes.get("/templates/:id/preview", ...staff, async (req, res) => {
+  const template = await AssessmentTemplateModel.findById(objectId(req.params.id, "template"));
+
+  if (!template) {
+    throw new ApiError(404, "template_not_found", "Assessment template not found");
+  }
+
+  if (template.status !== "published") {
+    throw new ApiError(409, "not_published", "Publish this template before previewing it");
+  }
+
+  const questions = await buildPaper(template, newSeed());
+  const items = await AssessmentItemModel.find(
+    { _id: { $in: questions.map((q) => q.item) } },
+    { prompt: 1, options: 1, type: 1 },
+  ).lean();
+
+  const byId = new Map(items.map((item) => [item._id.toString(), item]));
+
+  res.json({
+    attemptId: "demo",
+    title: template.title,
+    subject: template.subject,
+    status: "in_progress",
+    endsAt: null,
+    serverTime: new Date().toISOString(),
+    questions: questions.map((question, index) => {
+      const item = byId.get(question.item.toString());
+
+      return {
+        number: index + 1,
+        itemId: question.item.toString(),
+        skill: skillLabel(question.skill),
+        type: item?.type ?? "multiple_choice",
+        prompt: item?.prompt ?? "(Question unavailable)",
+        options: (item?.options ?? []).map((option) => ({
+          key: option.key,
+          text: option.text,
+        })),
+        points: question.maxPoints,
+        answer: "",
+        flagged: false,
+      };
+    }),
+  });
 });
 
 /** PUT /api/templates/:id. Once students have started it, the questions can't change. */
